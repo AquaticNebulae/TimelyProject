@@ -32,7 +32,7 @@ const Sidebar: React.FC<Props> = ({ sidebarToggle, onNavigate }) => {
             <hr className="border-gray-700" />
 
             <ul className="mt-6 text-white font-medium">
-                <li className={itemBase} onClick={() => onNavigate("sidebar")}>
+                <li className={itemBase} onClick={() => onNavigate("dashboard")}>
                     <div className={itemInner}>
                         <FaHome className="w-5 h-5" />
                         Home
@@ -67,7 +67,7 @@ const Sidebar: React.FC<Props> = ({ sidebarToggle, onNavigate }) => {
                     </div>
                 </li>
 
-                <li className={itemBase} onClick={() => onNavigate("PasswordGenerator")}>
+                <li className={itemBase} onClick={() => onNavigate("EmailGenerator")}>
                     <div className={itemInner}>
                         <FaUserCog className="w-5 h-5" />
                         Admin

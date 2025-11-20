@@ -2,13 +2,12 @@
 import SidebarLayout from "./Style_Components/Sidebar";
 import Dashboard from "./Style_Components/Dashboard";
 import Login from "./Style_Components/Login";
-import PasswordGenerator from "./Views_Layouts/PasswordGenerator";
 import EmailGenerator from "./Views_Layouts/EmailGenerator";
 
 
 export default function App() {
     const [sidebarToggle, setSidebarToggle] = useState(false);
-    const [isAuthed, setIsAuthed] = useState(true);
+    const [isAuthed, setIsAuthed] = useState(false); // change to true to remove log in
 
     const [activePage, setActivePage] = useState("dashboard");
 
@@ -22,15 +21,16 @@ export default function App() {
                 sidebarToggle={sidebarToggle}
                 onNavigate={setActivePage}        
             />
-
+            
             <div className={`${sidebarToggle ? "" : "ml-64"} w-full`}>
                 {/* DASHBOARD */}
-                {activePage === "sidebar" && (
+                {activePage === "dashboard" && (
                     <Dashboard
                         sidebarToggle={sidebarToggle}
                         setSidebarToggle={setSidebarToggle}
                     />
-                )}
+                )} 
+                
 
                 {/* PROJECTS */}
                 {activePage === "projects" && (
@@ -53,9 +53,9 @@ export default function App() {
                 )}
 
                 {/* ADMIN →  */}
-                {activePage === "PasswordGenerator" && (
+                {activePage === "EmailGenerator" && (
                     <div className="p-6">
-                        <PasswordGenerator />
+                        <EmailGenerator />
                     </div>
                 )}
 

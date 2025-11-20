@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <Folder Include="DBInfo\" />
-    <Folder Include="Timely_FrontEnd\src\Tabs\" />
   </ItemGroup>
 
 </Project>
