@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-
+// Not finished
 function slugifyName(s: string) {
     return s
         .toLowerCase()

@@ -25,7 +25,7 @@ export default function App() {
 
             <div className={`${sidebarToggle ? "" : "ml-64"} w-full`}>
                 {/* DASHBOARD */}
-                {activePage === "Sidebar" && (
+                {activePage === "sidebar" && (
                     <Dashboard
                         sidebarToggle={sidebarToggle}
                         setSidebarToggle={setSidebarToggle}
@@ -53,9 +53,9 @@ export default function App() {
                 )}
 
                 {/* ADMIN →  */}
-                {activePage === "EmailGenerator" && (
+                {activePage === "PasswordGenerator" && (
                     <div className="p-6">
-                        <EmailGenerator />
+                        <PasswordGenerator />
                     </div>
                 )}
 
