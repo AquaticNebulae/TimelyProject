@@ -132,8 +132,49 @@ const EmailGenerator: React.FC = () => {
     )}?subject=${encodeURIComponent(subject)}&body=${body}`;
 
     window.location.href = mailtoUrl;
-  }
+    }
+  // part of csv
+    async function saveUserToCsvFile() {
+        if (!firstName.trim() || !lastName.trim()) {
+            showError("First name and last name are required.");
+            return;
+        }
+        if (!companyEmail) {
+            showError("Company email is missing. Check first and last name.");
+            return;
+        }
+        if (!tempPassword) {
+            showError("Generate a temporary password first.");
+            return;
+        }
 
+        try {
+            const response = await fetch("http://localhost:4000/api/users-csv", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    firstName: firstName.trim(),
+                    middleName: middleName.trim(),
+                    lastName: lastName.trim(),
+                    email: companyEmail,
+                    tempPassword: tempPassword,
+                }),
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.error || "Failed to save user to CSV.");
+            }
+
+            const data = await response.json();
+            showStatus(`User saved to CSV file (CustomerID = ${data.customerId}).`);
+        } catch (err: any) {
+            showError(err.message || "Error saving user to CSV file.");
+        }
+    }
+    ///
   return (
     <div className="min-h-screen flex items-start justify-center bg-slate-100 pt-16">
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl p-8 m-4">
@@ -288,11 +329,19 @@ const EmailGenerator: React.FC = () => {
             onClick={sendMailtoInvite}
           >
             Send Invite Email (mailto)
-          </button>
+
+                  </button>
+                  <button
+                      type="button"
+                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600"
+                      onClick={saveUserToCsvFile}
+                  >
+                      Save to shared CSV file
+                  </button>
         </div>
       </div>
     </div>
-  );
+    );
 };
 
 export default EmailGenerator;
