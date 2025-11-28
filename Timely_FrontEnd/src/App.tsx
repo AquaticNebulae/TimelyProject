@@ -2,122 +2,138 @@
 import SidebarLayout from "./Style_Components/Sidebar";
 import Dashboard from "./Style_Components/Dashboard";
 import Login from "./Style_Components/Login";
-import EmailGenerator from "./Views_Layouts/EmailGenerator";
-//james,W,mardi,mardij@timely.com,95fUdnH3*KrD
+import AdminTab from "./Tabs/admin";
+import ReportsTab from "./Tabs/reports";
+
+// 👇 adjust this list to whatever emails should be admins
+const ADMIN_EMAILS = ["fryv@timely.com", "mardij@timely.com"];
+
+type UserInfo = {
+  customerId: string;
+  email: string;
+  name: string;
+};
+
 export default function App() {
-    const [sidebarToggle, setSidebarToggle] = useState(false);
-    const [isAuthed, setIsAuthed] = useState(false);
-    const [activePage, setActivePage] = useState("dashboard");
-    const [userData, setUserData] = useState<any>(null);
+  const [sidebarToggle, setSidebarToggle] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [activePage, setActivePage] = useState("dashboard");
+  const [userData, setUserData] = useState<UserInfo | null>(null);
 
-    // Check if user is already logged in on mount
-    useEffect(() => {
-        const user = localStorage.getItem("timely_user");
-        const authenticated = localStorage.getItem("timely_authenticated");
+  // computed admin flag based on logged-in user's email
+  const isAdmin = true; //set true to test admin UI without login. Erase it to see normal user view.
+    !!userData &&
+    !!userData.email &&
+    ADMIN_EMAILS.includes(userData.email.toLowerCase());
 
-        if (user && authenticated === "true") {
-            setUserData(JSON.parse(user));
-            setIsAuthed(true);
-        }
-    }, []);
+  // Check if user is already logged in on mount
+  useEffect(() => {
+    const user = localStorage.getItem("timely_user");
+    const authenticated = localStorage.getItem("timely_authenticated");
 
-    const handleLoginSuccess = (user: any) => {
-        console.log("Login successful:", user);
-        setUserData(user);
-        setIsAuthed(true); // change to true to deactivate log in 
-    };
+    if (user && authenticated === "true") {
+      const parsed: UserInfo = JSON.parse(user);
+      setUserData(parsed);
+      setIsAuthed(true);
+    }
+  }, []);
 
-    const handleLogout = () => {
-        localStorage.removeItem("timely_user");
-        localStorage.removeItem("timely_authenticated");
-        setUserData(null);
-        setIsAuthed(false);
-        setActivePage("dashboard");
-    };
+  const handleLoginSuccess = (user: UserInfo) => {
+    console.log("Login successful:", user);
+    // Login.tsx already sets localStorage, but this keeps App state in sync
+    setUserData(user);
+    setIsAuthed(true);
+  };
 
-    const handleNavigation = (page: string) => {
-        if (page === "logout") {
-            handleLogout();
-        } else {
-            setActivePage(page);
-        }
-    };
+  const handleLogout = () => {
+    localStorage.removeItem("timely_user");
+    localStorage.removeItem("timely_authenticated");
+    setUserData(null);
+    setIsAuthed(false);
+    setActivePage("dashboard");
+  };
 
-    if (!isAuthed) {
-        return <Login onLoginSuccess={handleLoginSuccess} />;
+  const handleNavigation = (page: string) => {
+    if (page === "logout") {
+      handleLogout();
+      return;
     }
 
-    return (
-        <div className="flex min-h-screen">
-            <SidebarLayout
-                sidebarToggle={sidebarToggle}
-                onNavigate={handleNavigation}
-            />
+    // extra safety: ignore Admin nav if this user is not admin
+    if (page === "admin" && !isAdmin) {
+      return;
+    }
 
-            <div className={`${sidebarToggle ? "" : "ml-64"} w-full`}>
-                {/* DASHBOARD */}
-                {activePage === "dashboard" && (
-                    <Dashboard
-                        sidebarToggle={sidebarToggle}
-                        setSidebarToggle={setSidebarToggle}
-                    />
-                )}
+    setActivePage(page);
+  };
 
-                {/* PROJECTS */}
-                {activePage === "projects" && (
-                    <div className="p-6 text-white bg-gray-900 min-h-screen">
-                        <h1 className="text-2xl font-semibold mb-4">Projects</h1>
-                        <p>Projects view coming soon...</p>
-                    </div>
-                )}
+  if (!isAuthed) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
 
-                {/* CLIENT */}
-                {activePage === "client" && (
-                    <div className="p-6 text-white bg-gray-900 min-h-screen">
-                        <h1 className="text-2xl font-semibold mb-4">Clients</h1>
-                        <p>Client view coming soon...</p>
-                    </div>
-                )}
+  return (
+    <div className="flex min-h-screen">
+      <SidebarLayout
+        sidebarToggle={sidebarToggle}
+        onNavigate={handleNavigation}
+        isAdmin={isAdmin} // 👈 tell sidebar if user is admin
+      />
 
-                {/* CONSULTANTS */}
-                {activePage === "consultants" && (
-                    <div className="p-6 text-white bg-gray-900 min-h-screen">
-                        <h1 className="text-2xl font-semibold mb-4">Consultants</h1>
-                        <p>Consultants view coming soon...</p>
-                    </div>
-                )}
+      <div className={`${sidebarToggle ? "" : "ml-64"} w-full`}>
+        {/* DASHBOARD */}
+        {activePage === "dashboard" && (
+          <Dashboard
+            sidebarToggle={sidebarToggle}
+            setSidebarToggle={setSidebarToggle}
+          />
+        )}
 
-                {/* REPORTS */}
-                {activePage === "reports" && (
-                    <div className="p-6 text-white bg-gray-900 min-h-screen">
-                        <h1 className="text-2xl font-semibold mb-4">Reports</h1>
-                        <p>Reports view coming soon...</p>
-                    </div>
-                )}
+        {/* PROJECTS */}
+        {activePage === "projects" && (
+          <div className="p-6 text-white bg-gray-900 min-h-screen">
+            <h1 className="text-2xl font-semibold mb-4">Projects</h1>
+            <p>Projects view coming soon...</p>
+          </div>
+        )}
 
-                {/* ADMIN → Email Generator */}
-                {activePage === "EmailGenerator" && (
-                    <div className="bg-gray-900 min-h-screen">
-                        <EmailGenerator />
-                    </div>
-                )}
+        {/* CLIENT */}
+        {activePage === "client" && (
+          <div className="p-6 text-white bg-gray-900 min-h-screen">
+            <h1 className="text-2xl font-semibold mb-4">Clients</h1>
+            <p>Client view coming soon...</p>
+          </div>
+        )}
 
-                {/* HOURS */}
-                {activePage === "hours" && (
-                    <div className="p-6 text-white bg-gray-900 min-h-screen">
-                        <h1 className="text-2xl font-semibold mb-4">Hours</h1>
-                        <p>Hours view coming soon...</p>
-                    </div>
-                )}
+        {/* CONSULTANTS */}
+        {activePage === "consultants" && (
+          <div className="p-6 text-white bg-gray-900 min-h-screen">
+            <h1 className="text-2xl font-semibold mb-4">Consultants</h1>
+            <p>Consultants view coming soon...</p>
+          </div>
+        )}
 
-                {/* SETTINGS */}
-                {activePage === "settings" && (
-                    <div className="p-6 text-white bg-gray-900 min-h-screen">
-                        <h1 className="text-2xl font-semibold mb-4">Settings</h1>
-                        <p>Settings view coming soon...</p>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+        {/* REPORTS */}
+        {activePage === "reports" && <ReportsTab />}
+
+        {/* ADMIN – only reachable if isAdmin is true */}
+        {activePage === "admin" && isAdmin && <AdminTab />}
+
+        {/* HOURS */}
+        {activePage === "hours" && (
+          <div className="p-6 text-white bg-gray-900 min-h-screen">
+            <h1 className="text-2xl font-semibold mb-4">Hours</h1>
+            <p>Hours view coming soon...</p>
+          </div>
+        )}
+
+        {/* SETTINGS */}
+        {activePage === "settings" && (
+          <div className="p-6 text-white bg-gray-900 min-h-screen">
+            <h1 className="text-2xl font-semibold mb-4">Settings</h1>
+            <p>Settings view coming soon...</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

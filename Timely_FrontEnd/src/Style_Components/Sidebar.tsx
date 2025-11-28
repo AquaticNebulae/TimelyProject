@@ -14,9 +14,10 @@ import { FaRegFolder } from "react-icons/fa6";
 type Props = {
     sidebarToggle: boolean;
     onNavigate: (page: string) => void;
+    isAdmin: boolean;
 };
 
-const Sidebar: React.FC<Props> = ({ sidebarToggle, onNavigate }) => {
+const Sidebar: React.FC<Props> = ({ sidebarToggle, onNavigate, isAdmin }) => {
     const itemBase =
         "mb-2 rounded py-2 hover:bg-blue-500 cursor-pointer select-none";
     const itemInner = "px-3 flex items-center gap-3";
@@ -67,12 +68,14 @@ const Sidebar: React.FC<Props> = ({ sidebarToggle, onNavigate }) => {
                     </div>
                 </li>
 
-                <li className={itemBase} onClick={() => onNavigate("EmailGenerator")}>
-                    <div className={itemInner}>
-                        <FaUserCog className="w-5 h-5" />
-                        Admin
-                    </div>
-                </li>
+                {isAdmin && (
+                    <li className={itemBase} onClick={() => onNavigate("admin")}>
+                        <div className={itemInner}>
+                            <FaUserCog className="w-5 h-5" />
+                            Admin
+                        </div>
+                    </li>
+                )}
 
                 <li className={itemBase} onClick={() => onNavigate("hours")}>
                     <div className={itemInner}>
@@ -92,8 +95,10 @@ const Sidebar: React.FC<Props> = ({ sidebarToggle, onNavigate }) => {
                     </div>
                 </li>
 
-                <li className="mb-2 rounded py-2 hover:bg-red-600 cursor-pointer select-none"
-                    onClick={() => onNavigate("logout")}>
+                <li
+                    className="mb-2 rounded py-2 hover:bg-red-600 cursor-pointer select-none"
+                    onClick={() => onNavigate("logout")}
+                >
                     <div className={itemInner}>
                         <FaLongArrowAltRight className="w-5 h-5" />
                         Logout
@@ -105,4 +110,3 @@ const Sidebar: React.FC<Props> = ({ sidebarToggle, onNavigate }) => {
 };
 
 export default Sidebar;
-
