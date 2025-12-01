@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import DataTable from "./DataTable";
-import { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table";
 
 interface Report {
     id: number;
