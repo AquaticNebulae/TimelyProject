@@ -3,7 +3,7 @@ import SidebarLayout from "./Style_Components/Sidebar";
 import Dashboard from "./Style_Components/Dashboard";
 import Login from "./Style_Components/Login";
 import AdminTab from "./Tabs/admin";
-import ReportsTab from "./Tabs/reports";
+import ReportsTab from "./Tabs/reports_V";
 
 // 👇 adjust this list to whatever emails should be admins
 const ADMIN_EMAILS = ["fryv@timely.com", "mardij@timely.com"];
