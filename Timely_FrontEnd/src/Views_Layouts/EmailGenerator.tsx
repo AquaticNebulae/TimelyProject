@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
 
+const API_BASE = "http://localhost:4000";
+
 const EmailGenerator: React.FC = () => {
   // --- FORM STATE ---
   const [firstName, setFirstName] = useState("");
@@ -13,9 +15,9 @@ const EmailGenerator: React.FC = () => {
   const [inviteLink, setInviteLink] = useState("");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // NOTE: since there is no backend right now, Client ID is just a placeholder string.
-  // You can leave it like this for demo, and later replace it when you really get an ID from DB.
+  // NOTE: since there is no real DB yet, Client ID is just a placeholder string.
   const clientId = useMemo(() => {
     if (!clientNumber.trim()) return "Will be assigned by database later";
     return `Pending-${clientNumber.trim()}`;
@@ -23,9 +25,11 @@ const EmailGenerator: React.FC = () => {
 
   // Company email based on last name + first initial
   const companyEmail = useMemo(() => {
-    if (!firstName.trim() || !lastName.trim()) return "";
-    const firstInitial = firstName.trim()[0].toLowerCase();
-    const last = lastName.trim().replace(/\s+/g, "").toLowerCase();
+    const f = firstName.trim();
+    const l = lastName.trim();
+    if (!f || !l) return "";
+    const firstInitial = f[0].toLowerCase();
+    const last = l.replace(/\s+/g, "").toLowerCase();
     return `${last}${firstInitial}@timely.com`;
   }, [firstName, lastName]);
 
@@ -51,6 +55,7 @@ const EmailGenerator: React.FC = () => {
         () => showError("Could not copy to clipboard.")
       );
     } else {
+      // Fallback for older browsers
       const tempInput = document.createElement("input");
       tempInput.value = value;
       document.body.appendChild(tempInput);
@@ -87,7 +92,7 @@ const EmailGenerator: React.FC = () => {
 
   // Fake invite link (just for UI/demo)
   function createInviteLink() {
-    if (!companyEmail || !personalEmail) {
+    if (!companyEmail || !personalEmail.trim()) {
       showError("Company email and personal email are required for invite link.");
       return;
     }
@@ -113,8 +118,12 @@ const EmailGenerator: React.FC = () => {
       fullName ? `Hello ${fullName},` : "Hello,",
       "",
       "Your Timely account has been prepared by the administrator.",
-      companyEmail ? `Company login email: ${companyEmail}` : "Company login email: (to be assigned)",
-      tempPassword ? `Temporary password: ${tempPassword}` : "Temporary password: (to be assigned)",
+      companyEmail
+        ? `Company login email: ${companyEmail}`
+        : "Company login email: (to be assigned)",
+      tempPassword
+        ? `Temporary password: ${tempPassword}`
+        : "Temporary password: (to be assigned)",
       clientNumber ? `Client number: ${clientNumber}` : "",
       clientId ? `Client ID (database): ${clientId}` : "",
       inviteLink ? `Invite link: ${inviteLink}` : "",
@@ -132,49 +141,53 @@ const EmailGenerator: React.FC = () => {
     )}?subject=${encodeURIComponent(subject)}&body=${body}`;
 
     window.location.href = mailtoUrl;
+  }
+
+  // Save user to CSV (backend API)
+  async function saveUserToCsvFile() {
+    if (!firstName.trim() || !lastName.trim()) {
+      showError("First name and last name are required.");
+      return;
     }
-  // part of csv
-    async function saveUserToCsvFile() {
-        if (!firstName.trim() || !lastName.trim()) {
-            showError("First name and last name are required.");
-            return;
-        }
-        if (!companyEmail) {
-            showError("Company email is missing. Check first and last name.");
-            return;
-        }
-        if (!tempPassword) {
-            showError("Generate a temporary password first.");
-            return;
-        }
-
-        try {
-            const response = await fetch("http://localhost:4000/api/users-csv", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    firstName: firstName.trim(),
-                    middleName: middleName.trim(),
-                    lastName: lastName.trim(),
-                    email: companyEmail,
-                    tempPassword: tempPassword,
-                }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data.error || "Failed to save user to CSV.");
-            }
-
-            const data = await response.json();
-            showStatus(`User saved to CSV file (CustomerID = ${data.customerId}).`);
-        } catch (err: any) {
-            showError(err.message || "Error saving user to CSV file.");
-        }
+    if (!companyEmail) {
+      showError("Company email is missing. Check first and last name.");
+      return;
     }
-    ///
+    if (!tempPassword) {
+      showError("Generate a temporary password first.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const response = await fetch(`${API_BASE}/api/users-csv`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          middleName: middleName.trim(),
+          lastName: lastName.trim(),
+          email: companyEmail,
+          tempPassword: tempPassword,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save user to CSV.");
+      }
+
+      const data = await response.json();
+      showStatus(`User saved to CSV file (CustomerID = ${data.customerId}).`);
+    } catch (err: any) {
+      showError(err.message || "Error saving user to CSV file.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-start justify-center bg-slate-100 pt-16">
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl p-8 m-4">
@@ -183,8 +196,8 @@ const EmailGenerator: React.FC = () => {
         </h1>
         <p className="text-sm text-slate-600 mb-6">
           Use this screen to create a new client or consultant: enter their info, generate a
-          company email and temporary password, and prepare an invite email. Database saving will
-          be added later.
+          company email and temporary password, and prepare an invite email. Data is currently
+          stored in a shared CSV file on the server.
         </p>
 
         {statusMessage && (
@@ -261,7 +274,9 @@ const EmailGenerator: React.FC = () => {
         {/* PASSWORD + INVITE LINK */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
           <div>
-            <div className="text-xs font-semibold text-slate-600 mb-1">Temporary password</div>
+            <div className="text-xs font-semibold text-slate-600 mb-1">
+              Temporary password
+            </div>
             <div className="flex gap-2">
               <input
                 className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
@@ -287,7 +302,9 @@ const EmailGenerator: React.FC = () => {
           </div>
 
           <div>
-            <div className="text-xs font-semibold text-slate-600 mb-1">Secure invite link</div>
+            <div className="text-xs font-semibold text-slate-600 mb-1">
+              Secure invite link
+            </div>
             <div className="flex gap-2">
               <input
                 className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -329,19 +346,24 @@ const EmailGenerator: React.FC = () => {
             onClick={sendMailtoInvite}
           >
             Send Invite Email (mailto)
+          </button>
 
-                  </button>
-                  <button
-                      type="button"
-                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600"
-                      onClick={saveUserToCsvFile}
-                  >
-                      Save to shared CSV file
-                  </button>
+          <button
+            type="button"
+            disabled={saving}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+              saving
+                ? "bg-amber-300 text-amber-900 cursor-not-allowed"
+                : "bg-amber-500 hover:bg-amber-600 text-white"
+            }`}
+            onClick={saveUserToCsvFile}
+          >
+            {saving ? "Saving..." : "Save to shared CSV file"}
+          </button>
         </div>
       </div>
     </div>
-    );
+  );
 };
 
 export default EmailGenerator;

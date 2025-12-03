@@ -1,0 +1,9 @@
+LogID,Timestamp,ActionType,EntityType,EntityId,PerformedBy,Details
+1,2025-11-28T22:29:02.503Z,CREATE_CONSULTANT,consultant,CO-0001,devadmin@timely.com,Consultant created: Vladyslav Khodorovskyy (khodor10812@gmail.com)
+2,2025-11-28T22:29:19.497Z,CREATE_PROJECT,project,P-0001,devadmin@timely.com,Project created: Timely
+3,2025-11-28T22:29:32.906Z,CREATE_PROJECT,project,P-0002,devadmin@timely.com,Project created: test
+4,2025-11-28T22:29:35.747Z,DELETE_PROJECT,project,P-0002,devadmin@timely.com,Project deleted: test
+5,2025-11-28T22:29:46.375Z,CREATE_CONSULTANT,consultant,CO-0002,devadmin@timely.com,Consultant created: test test (test)
+6,2025-11-28T22:29:50.161Z,DELETE_CONSULTANT,consultant,CO-0002,devadmin@timely.com,Consultant deleted: test test (test)
+7,2025-11-28T22:30:00.164Z,ASSIGN_CONSULTANT,client_consultant,C8-CO1,devadmin@timely.com,Consultant 1 assigned to client 8
+8,2025-11-28T22:30:07.654Z,ASSIGN_PROJECT,project_assignment,C8-P1,devadmin@timely.com,Project 1 assigned to client 8

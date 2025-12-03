@@ -6,7 +6,12 @@ import EmailGenerator from "./Views_Layouts/EmailGenerator";
 //james,W,mardi,mardij@timely.com,95fUdnH3*KrD
 export default function App() {
     const [sidebarToggle, setSidebarToggle] = useState(false);
+<<<<<<< HEAD
+    const [isAuthed, setIsAuthed] = useState(true); // change to true to remove log in
+
+=======
     const [isAuthed, setIsAuthed] = useState(false);
+>>>>>>> b1b7439e47289ea930ba955fc737cea2d39262bc
     const [activePage, setActivePage] = useState("dashboard");
     const [userData, setUserData] = useState<any>(null);
 
