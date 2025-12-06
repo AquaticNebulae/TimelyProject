@@ -1,369 +1,232 @@
 import React, { useMemo, useState } from "react";
+import { useTheme } from '../Views_Layouts/ThemeContext';
+import { User, Briefcase, Mail, Key, Link2, Copy, Send, Save, Trash2, CheckCircle, AlertCircle, Info, X } from 'lucide-react';
 
 const API_BASE = "http://localhost:4000";
 
+type AccountType = "client" | "consultant";
+interface Toast { id: string; message: string; type: 'success' | 'error' | 'info'; }
+
 const EmailGenerator: React.FC = () => {
-  // --- FORM STATE ---
-  const [firstName, setFirstName] = useState("");
-  const [middleName, setMiddleName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [clientNumber, setClientNumber] = useState("");
-  const [personalEmail, setPersonalEmail] = useState("");
+    const { isDark } = useTheme();
+    const styles = {
+        bg: isDark ? 'bg-slate-950' : 'bg-gray-50',
+        text: isDark ? 'text-white' : 'text-gray-900',
+        textMuted: isDark ? 'text-slate-400' : 'text-gray-600',
+        textSubtle: isDark ? 'text-slate-500' : 'text-gray-400',
+        card: isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200',
+        cardHover: isDark ? 'hover:bg-slate-800' : 'hover:bg-gray-50',
+        cardInner: isDark ? 'bg-slate-800' : 'bg-gray-50',
+        input: isDark ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-300 text-gray-900',
+        inputFocus: isDark ? 'focus:border-blue-500' : 'focus:border-blue-500',
+        button: isDark ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800',
+        buttonPrimary: 'bg-blue-600 hover:bg-blue-700 text-white',
+        divider: isDark ? 'border-slate-700' : 'border-gray-200',
+        accent: isDark ? 'text-blue-400' : 'text-blue-600',
+    };
 
-  // --- GENERATED VALUES ---
-  const [tempPassword, setTempPassword] = useState("");
-  const [inviteLink, setInviteLink] = useState("");
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+    // Toast system
+    const [toasts, setToasts] = useState<Toast[]>([]);
+    const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+        const id = `toast_${Date.now()}`;
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+    };
+    const ToastIcon = ({ type }: { type: string }) => {
+        if (type === 'success') return <CheckCircle className="w-5 h-5 text-emerald-400" />;
+        if (type === 'error') return <AlertCircle className="w-5 h-5 text-red-400" />;
+        return <Info className="w-5 h-5 text-blue-400" />;
+    };
 
-  // NOTE: since there is no real DB yet, Client ID is just a placeholder string.
-  const clientId = useMemo(() => {
-    if (!clientNumber.trim()) return "Will be assigned by database later";
-    return `Pending-${clientNumber.trim()}`;
-  }, [clientNumber]);
+    const [accountType, setAccountType] = useState<AccountType>("client");
+    const [firstName, setFirstName] = useState("");
+    const [middleName, setMiddleName] = useState("");
+    const [lastName, setLastName] = useState("");
+    const [personalEmail, setPersonalEmail] = useState("");
+    const [consultantRole, setConsultantRole] = useState("");
+    const [tempPassword, setTempPassword] = useState("");
+    const [inviteLink, setInviteLink] = useState("");
+    const [saving, setSaving] = useState(false);
 
-  // Company email based on last name + first initial
-  const companyEmail = useMemo(() => {
-    const f = firstName.trim();
-    const l = lastName.trim();
-    if (!f || !l) return "";
-    const firstInitial = f[0].toLowerCase();
-    const last = l.replace(/\s+/g, "").toLowerCase();
-    return `${last}${firstInitial}@timely.com`;
-  }, [firstName, lastName]);
+    const companyEmail = useMemo(() => {
+        const f = firstName.trim(), l = lastName.trim();
+        if (!f || !l) return "";
+        return `${l.replace(/\s+/g, "").toLowerCase()}${f[0].toLowerCase()}@timely.com`;
+    }, [firstName, lastName]);
 
-  // --- HELPERS ---
-  function showStatus(msg: string) {
-    setStatusMessage(msg);
-    setTimeout(() => setStatusMessage(null), 3000);
-  }
+    const copyToClipboard = (value: string, label: string) => {
+        if (!value) { showToast(`Nothing to copy for ${label}`, 'error'); return; }
+        navigator.clipboard.writeText(value).then(
+            () => showToast(`${label} copied`, 'success'),
+            () => showToast("Could not copy to clipboard", 'error')
+        );
+    };
 
-  function showError(msg: string) {
-    setErrorMessage(msg);
-    setTimeout(() => setErrorMessage(null), 4000);
-  }
+    const generateStrongPassword = () => {
+        const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ", lower = "abcdefghijkmnopqrstuvwxyz", digits = "23456789", symbols = "!@$%^&*?";
+        const all = upper + lower + digits + symbols;
+        const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+        let pwd = pick(upper) + pick(lower) + pick(digits) + pick(symbols);
+        while (pwd.length < 12) pwd += pick(all);
+        setTempPassword(pwd.split("").sort(() => Math.random() - 0.5).join(""));
+        showToast("Password generated", 'success');
+    };
 
-  function copyToClipboard(value: string, label: string) {
-    if (!value) {
-      showError(`Nothing to copy for ${label}.`);
-      return;
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(value).then(
-        () => showStatus(`${label} copied to clipboard.`),
-        () => showError("Could not copy to clipboard.")
-      );
-    } else {
-      // Fallback for older browsers
-      const tempInput = document.createElement("input");
-      tempInput.value = value;
-      document.body.appendChild(tempInput);
-      tempInput.select();
-      document.execCommand("copy");
-      document.body.removeChild(tempInput);
-      showStatus(`${label} copied to clipboard.`);
-    }
-  }
+    const createInviteLink = () => {
+        if (!companyEmail || !personalEmail.trim()) { showToast("Company email and personal email required", 'error'); return; }
+        const token = Math.random().toString(36).slice(2, 12);
+        setInviteLink(`https://timely.example.com/invite?email=${encodeURIComponent(companyEmail)}&token=${token}`);
+        showToast("Invite link generated", 'success');
+    };
 
-  // Strong-ish password generator (frontend only)
-  function generateStrongPassword() {
-    const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
-    const lower = "abcdefghijkmnopqrstuvwxyz";
-    const digits = "23456789";
-    const symbols = "!@$%^&*?";
-    const all = upper + lower + digits + symbols;
+    const sendMailtoInvite = () => {
+        if (!personalEmail.trim()) { showToast("Personal email required", 'error'); return; }
+        const fullName = `${firstName} ${middleName ? middleName + " " : ""}${lastName}`.trim();
+        const typeLabel = accountType === "client" ? "Client" : "Consultant";
+        const subject = `Your Timely ${typeLabel} Account Information`;
+        const bodyLines = [
+            fullName ? `Hello ${fullName},` : "Hello,", "",
+            `Your Timely ${typeLabel.toLowerCase()} account has been created.`, "",
+            companyEmail ? `Login email: ${companyEmail}` : "",
+            tempPassword ? `Temporary password: ${tempPassword}` : "", "",
+            accountType === "consultant" && consultantRole ? `Role: ${consultantRole}` : "",
+            inviteLink ? `Invite link: ${inviteLink}` : "", "",
+            "Please change your password after first login.", "", "Best regards,", "Timely Admin",
+        ].filter(Boolean);
+        window.location.href = `mailto:${encodeURIComponent(personalEmail.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join("\n"))}`;
+    };
 
-    const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+    const clearForm = () => {
+        setFirstName(""); setMiddleName(""); setLastName(""); setPersonalEmail("");
+        setConsultantRole(""); setTempPassword(""); setInviteLink("");
+        showToast("Form cleared", 'info');
+    };
 
-    let pwd = pick(upper) + pick(lower) + pick(digits) + pick(symbols);
-    while (pwd.length < 12) {
-      pwd += pick(all);
-    }
+    const saveToDatabase = async () => {
+        if (!firstName.trim() || !lastName.trim()) { showToast("First and last name required", 'error'); return; }
+        if (!companyEmail) { showToast("Company email missing", 'error'); return; }
+        if (!tempPassword) { showToast("Generate a password first", 'error'); return; }
 
-    pwd = pwd
-      .split("")
-      .sort(() => Math.random() - 0.5)
-      .join("");
+        setSaving(true);
+        try {
+            const endpoint = accountType === "client" ? `${API_BASE}/api/users-csv` : `${API_BASE}/api/consultants-csv`;
+            const payload = accountType === "client"
+                ? { firstName: firstName.trim(), middleName: middleName.trim(), lastName: lastName.trim(), email: companyEmail, tempPassword, performedBy: 'admin' }
+                : { firstName: firstName.trim(), lastName: lastName.trim(), email: companyEmail, tempPassword, role: consultantRole.trim() || "Consultant", performedBy: 'admin' };
 
-    setTempPassword(pwd);
-    showStatus("Secure temporary password generated.");
-  }
+            const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Failed to save ${accountType}`); }
 
-  // Fake invite link (just for UI/demo)
-  function createInviteLink() {
-    if (!companyEmail || !personalEmail.trim()) {
-      showError("Company email and personal email are required for invite link.");
-      return;
-    }
+            const data = await response.json();
+            const codeValue = accountType === "client" ? data.clientCode : data.consultantCode;
+            showToast(`Account created: ${codeValue}`, 'success');
+            clearForm();
+        } catch (err: any) { showToast(err.message || `Error saving ${accountType}`, 'error'); } finally { setSaving(false); }
+    };
 
-    const token = Math.random().toString(36).slice(2, 12);
-    const link = `https://timely.example.com/invite?email=${encodeURIComponent(
-      companyEmail
-    )}&token=${token}`;
-    setInviteLink(link);
-    showStatus("Secure invite link generated.");
-  }
-
-  function sendMailtoInvite() {
-    if (!personalEmail.trim()) {
-      showError("Client personal email is required.");
-      return;
-    }
-
-    const fullName = `${firstName} ${middleName ? middleName + " " : ""}${lastName}`.trim();
-    const subject = `Your Timely account information`;
-
-    const bodyLines = [
-      fullName ? `Hello ${fullName},` : "Hello,",
-      "",
-      "Your Timely account has been prepared by the administrator.",
-      companyEmail
-        ? `Company login email: ${companyEmail}`
-        : "Company login email: (to be assigned)",
-      tempPassword
-        ? `Temporary password: ${tempPassword}`
-        : "Temporary password: (to be assigned)",
-      clientNumber ? `Client number: ${clientNumber}` : "",
-      clientId ? `Client ID (database): ${clientId}` : "",
-      inviteLink ? `Invite link: ${inviteLink}` : "",
-      "",
-      "Please log in and change your password immediately after first sign-in.",
-      "",
-      "Best regards,",
-      "Timely Admin",
-    ].filter(Boolean);
-
-    const body = encodeURIComponent(bodyLines.join("\n"));
-
-    const mailtoUrl = `mailto:${encodeURIComponent(
-      personalEmail.trim()
-    )}?subject=${encodeURIComponent(subject)}&body=${body}`;
-
-    window.location.href = mailtoUrl;
-  }
-
-  // Save user to CSV (backend API)
-  async function saveUserToCsvFile() {
-    if (!firstName.trim() || !lastName.trim()) {
-      showError("First name and last name are required.");
-      return;
-    }
-    if (!companyEmail) {
-      showError("Company email is missing. Check first and last name.");
-      return;
-    }
-    if (!tempPassword) {
-      showError("Generate a temporary password first.");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const response = await fetch(`${API_BASE}/api/users-csv`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          firstName: firstName.trim(),
-          middleName: middleName.trim(),
-          lastName: lastName.trim(),
-          email: companyEmail,
-          tempPassword: tempPassword,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save user to CSV.");
-      }
-
-      const data = await response.json();
-      showStatus(`User saved to CSV file (CustomerID = ${data.customerId}).`);
-    } catch (err: any) {
-      showError(err.message || "Error saving user to CSV file.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="min-h-screen flex items-start justify-center bg-slate-100 pt-16">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl p-8 m-4">
-        <h1 className="text-2xl font-bold mb-2 text-slate-900">
-          Admin – Client Registration &amp; Invite
-        </h1>
-        <p className="text-sm text-slate-600 mb-6">
-          Use this screen to create a new client or consultant: enter their info, generate a
-          company email and temporary password, and prepare an invite email. Data is currently
-          stored in a shared CSV file on the server.
-        </p>
-
-        {statusMessage && (
-          <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-            {statusMessage}
-          </div>
-        )}
-        {errorMessage && (
-          <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
-            {errorMessage}
-          </div>
-        )}
-
-        {/* NAME ROW */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="First name"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-          />
-          <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="Middle (optional)"
-            value={middleName}
-            onChange={(e) => setMiddleName(e.target.value)}
-          />
-          <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="Last name"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-          />
-        </div>
-
-        {/* CLIENT NUMBER + PERSONAL EMAIL */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            placeholder="Client number / ID (optional)"
-            value={clientNumber}
-            onChange={(e) => setClientNumber(e.target.value)}
-          />
-          <div className="md:col-span-2">
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Client personal email (receives invite)"
-              value={personalEmail}
-              onChange={(e) => setPersonalEmail(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* CLIENT ID (DATABASE) DISPLAY - purely visual for now */}
-        <div className="mb-4">
-          <div className="text-xs font-semibold text-slate-600 mb-1">
-            Client ID (database)
-          </div>
-          <div className="w-full rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 text-sm text-slate-800">
-            {clientId}
-          </div>
-        </div>
-
-        {/* COMPANY EMAIL DISPLAY */}
-        <div className="mb-6">
-          <div className="text-xs font-semibold text-slate-600 mb-1">
-            Company email (lastname + firstInitial @ timely.com)
-          </div>
-          <div className="w-full rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 text-sm text-slate-800">
-            {companyEmail || "Enter first and last name to generate company email."}
-          </div>
-        </div>
-
-        {/* PASSWORD + INVITE LINK */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-          <div>
-            <div className="text-xs font-semibold text-slate-600 mb-1">
-              Temporary password
+    return (
+        <div className={`min-h-screen ${styles.bg}`}>
+            {/* Toast Notifications */}
+            <div className="fixed top-4 right-4 z-[10000] space-y-2">
+                {toasts.map(toast => (
+                    <div key={toast.id} className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+                        <ToastIcon type={toast.type} /><span className={styles.text}>{toast.message}</span>
+                        <button onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))} className={styles.textMuted}><X className="w-4 h-4" /></button>
+                    </div>
+                ))}
             </div>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
-                placeholder="Generate a strong password"
-                value={tempPassword}
-                readOnly
-              />
-              <button
-                type="button"
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700"
-                onClick={generateStrongPassword}
-              >
-                Generate
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-200 text-slate-800 hover:bg-slate-300"
-                onClick={() => copyToClipboard(tempPassword, "Password")}
-              >
-                Copy
-              </button>
-            </div>
-          </div>
 
-          <div>
-            <div className="text-xs font-semibold text-slate-600 mb-1">
-              Secure invite link
+            <div className="max-w-2xl mx-auto px-6 py-8">
+                {/* Header */}
+                <div className="mb-8">
+                    <h1 className={`text-4xl font-bold ${styles.text} mb-2`}>Create Account</h1>
+                    <p className={styles.textMuted}>Register a new client or consultant account</p>
+                </div>
+
+                {/* Main Card */}
+                <div className={`${styles.card} border rounded-lg overflow-hidden`}>
+                    <div className="p-6 space-y-6">
+                        {/* Account Type Toggle */}
+                        <div>
+                            <label className={`${styles.textMuted} text-sm block mb-2`}>Account Type</label>
+                            <div className={`flex rounded-lg border ${styles.divider} overflow-hidden`}>
+                                <button onClick={() => setAccountType("client")} className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${accountType === "client" ? styles.buttonPrimary : styles.button}`}>
+                                    <User className="w-4 h-4" />Client
+                                </button>
+                                <button onClick={() => setAccountType("consultant")} className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 border-l ${styles.divider} transition-colors ${accountType === "consultant" ? styles.buttonPrimary : styles.button}`}>
+                                    <Briefcase className="w-4 h-4" />Consultant
+                                </button>
+                            </div>
+                            <p className={`${styles.textSubtle} text-xs mt-2`}>{accountType === "client" ? "Clients can view their own projects and data" : "Consultants have access to the staff dashboard"}</p>
+                        </div>
+
+                        <div className={`border-t ${styles.divider}`} />
+
+                        {/* Personal Information */}
+                        <div>
+                            <h2 className={`${styles.text} font-semibold mb-4 flex items-center gap-2`}><User className={`w-5 h-5 ${styles.accent}`} />Personal Information</h2>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className={`${styles.textMuted} text-sm block mb-1`}>First Name *</label><input type="text" placeholder="John" value={firstName} onChange={(e) => setFirstName(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /></div>
+                                <div><label className={`${styles.textMuted} text-sm block mb-1`}>Last Name *</label><input type="text" placeholder="Smith" value={lastName} onChange={(e) => setLastName(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /></div>
+                            </div>
+                            {accountType === "client" && (
+                                <div className="mt-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Middle Name</label><input type="text" placeholder="Optional" value={middleName} onChange={(e) => setMiddleName(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /></div>
+                            )}
+                            {accountType === "consultant" && (
+                                <div className="mt-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Role / Title</label><input type="text" placeholder="e.g. Senior Consultant" value={consultantRole} onChange={(e) => setConsultantRole(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /></div>
+                            )}
+                            <div className="mt-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Personal Email</label><input type="email" placeholder="personal@example.com" value={personalEmail} onChange={(e) => setPersonalEmail(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /><p className={`${styles.textSubtle} text-xs mt-1`}>Used to send account invitation</p></div>
+                        </div>
+
+                        <div className={`border-t ${styles.divider}`} />
+
+                        {/* Account Credentials */}
+                        <div>
+                            <h2 className={`${styles.text} font-semibold mb-4 flex items-center gap-2`}><Key className={`w-5 h-5 ${styles.accent}`} />Account Credentials</h2>
+                            <div className="mb-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Company Email</label><div className={`px-4 py-2.5 ${styles.cardInner} border ${styles.divider} rounded-lg ${styles.textMuted}`}>{companyEmail || "Enter first and last name"}</div></div>
+                            <div>
+                                <label className={`${styles.textMuted} text-sm block mb-1`}>Temporary Password *</label>
+                                <div className="flex gap-2">
+                                    <input type="text" placeholder="Click Generate" value={tempPassword} readOnly className={`flex-1 px-4 py-2.5 ${styles.input} border rounded-lg font-mono`} />
+                                    <button onClick={generateStrongPassword} className={`px-4 py-2.5 ${styles.buttonPrimary} rounded-lg`}>Generate</button>
+                                    <button onClick={() => copyToClipboard(tempPassword, "Password")} className={`px-4 py-2.5 ${styles.button} rounded-lg`}><Copy className="w-4 h-4" /></button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className={`border-t ${styles.divider}`} />
+
+                        {/* Invitation */}
+                        <div>
+                            <h2 className={`${styles.text} font-semibold mb-4 flex items-center gap-2`}><Link2 className={`w-5 h-5 ${styles.accent}`} />Invitation</h2>
+                            <div>
+                                <label className={`${styles.textMuted} text-sm block mb-1`}>Invite Link</label>
+                                <div className="flex gap-2">
+                                    <input type="text" placeholder="Click Create to generate" value={inviteLink} readOnly className={`flex-1 px-4 py-2.5 ${styles.input} border rounded-lg text-sm`} />
+                                    <button onClick={createInviteLink} className={`px-4 py-2.5 ${styles.button} rounded-lg`}>Create</button>
+                                    <button onClick={() => copyToClipboard(inviteLink, "Invite link")} className={`px-4 py-2.5 ${styles.button} rounded-lg`}><Copy className="w-4 h-4" /></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className={`px-6 py-4 ${styles.cardInner} border-t ${styles.divider} flex flex-wrap items-center justify-between gap-3`}>
+                        <div className="flex gap-2">
+                            <button onClick={clearForm} className={`px-4 py-2.5 ${styles.button} rounded-lg flex items-center gap-2`}><Trash2 className="w-4 h-4" />Clear</button>
+                            <button onClick={() => copyToClipboard(companyEmail, "Company email")} className={`px-4 py-2.5 ${styles.button} rounded-lg flex items-center gap-2`}><Mail className="w-4 h-4" />Copy Email</button>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={sendMailtoInvite} className={`px-4 py-2.5 ${styles.button} rounded-lg flex items-center gap-2`}><Send className="w-4 h-4" />Send Invite</button>
+                            <button onClick={saveToDatabase} disabled={saving} className={`px-5 py-2.5 ${styles.buttonPrimary} rounded-lg flex items-center gap-2 disabled:opacity-50`}><Save className="w-4 h-4" />{saving ? "Saving..." : "Save Account"}</button>
+                        </div>
+                    </div>
+                </div>
+
+                <p className={`${styles.textSubtle} text-xs mt-4 text-center`}>{accountType === "client" ? "Client accounts are stored in users.csv" : "Consultant accounts are stored in consultants.csv"}</p>
             </div>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                placeholder="Click 'Create link' to generate"
-                value={inviteLink}
-                readOnly
-              />
-              <button
-                type="button"
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-violet-500 text-white hover:bg-violet-600"
-                onClick={createInviteLink}
-              >
-                Create link
-              </button>
-              <button
-                type="button"
-                className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-200 text-slate-800 hover:bg-slate-300"
-                onClick={() => copyToClipboard(inviteLink, "Invite link")}
-              >
-                Copy
-              </button>
-            </div>
-          </div>
         </div>
-
-        {/* ACTION BUTTONS */}
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-sky-500 text-white hover:bg-sky-600"
-            onClick={() => copyToClipboard(companyEmail, "Company email")}
-          >
-            Copy Company Email
-          </button>
-
-          <button
-            type="button"
-            className="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
-            onClick={sendMailtoInvite}
-          >
-            Send Invite Email (mailto)
-          </button>
-
-          <button
-            type="button"
-            disabled={saving}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold ${
-              saving
-                ? "bg-amber-300 text-amber-900 cursor-not-allowed"
-                : "bg-amber-500 hover:bg-amber-600 text-white"
-            }`}
-            onClick={saveUserToCsvFile}
-          >
-            {saving ? "Saving..." : "Save to shared CSV file"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default EmailGenerator;
