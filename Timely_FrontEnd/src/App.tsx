@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect } from "react";
+﻿// src/App.tsx
+import React, { useState, useEffect } from "react";
 import { ThemeProvider, useTheme } from "./Views_Layouts/ThemeContext";
 import SidebarLayout from "./Style_Components/Sidebar";
 import Navbar from "./Style_Components/Navbar";
@@ -14,177 +15,270 @@ import ConsultantsPage from "./Tabs/consultants";
 import HoursPage from "./Tabs/hours";
 import SettingsPage from "./Tabs/settings";
 
-// User info now includes role from the server
+type UserRole = "admin" | "consultant" | "client";
+
 type UserInfo = {
+  customerId: string;
+  email: string;
+  name: string;
+  role?: UserRole;
+};
+
+const normalizeRole = (role?: string): UserRole => {
+  const r = (role || "").toLowerCase();
+  if (r === "admin") return "admin";
+  if (r === "consultant") return "consultant";
+  return "client";
+};
+
+function AppContent() {
+  const { isDark } = useTheme();
+
+  const [sidebarToggle, setSidebarToggle] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activePage, setActivePage] = useState("dashboard");
+  const [pageHistory, setPageHistory] = useState<string[]>(["dashboard"]);
+  const [userData, setUserData] = useState<UserInfo | null>(null);
+
+  const currentRole: UserRole | undefined = userData?.role;
+  const isAdmin = currentRole === "admin";
+  const isConsultant = currentRole === "consultant";
+  const isClient = currentRole === "client";
+  const isStaff = isAdmin || isConsultant;
+
+  // 1) Restore auth from localStorage on mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem("timely_user");
+    const authenticated = localStorage.getItem("timely_authenticated");
+
+    if (storedUser && authenticated === "true") {
+      try {
+        const parsed = JSON.parse(storedUser) as {
+          customerId: string;
+          email: string;
+          name: string;
+          role?: string;
+        };
+
+        const normalizedUser: UserInfo = {
+          customerId: parsed.customerId,
+          email: parsed.email,
+          name: parsed.name,
+          role: normalizeRole(parsed.role),
+        };
+
+        setUserData(normalizedUser);
+        setIsAuthed(true);
+      } catch (err) {
+        console.error("Error parsing stored user:", err);
+      }
+    }
+
+    setIsLoading(false);
+  }, []);
+
+  // 2) Called by Login.tsx after successful login
+  const handleLoginSuccess = (user: {
     customerId: string;
     email: string;
     name: string;
-    role?: "admin" | "consultant" | "client";
-};
-
-// Inner app component that uses theme
-function AppContent() {
-    const { isDark } = useTheme();
-    const [sidebarToggle, setSidebarToggle] = useState(false);
-    const [isAuthed, setIsAuthed] = useState(false);
-    const [isLoading, setIsLoading] = useState(true); // Prevents flicker
-    const [activePage, setActivePage] = useState("dashboard");
-    const [pageHistory, setPageHistory] = useState<string[]>(["dashboard"]);
-    const [userData, setUserData] = useState<UserInfo | null>(null);
-
-    // Role checks - now based on the role returned from server
-    const isAdmin = userData?.role === "admin";
-    const isConsultant = userData?.role === "consultant";
-    const isClient = userData?.role === "client";
-
-    // Staff = admins + consultants (anyone who's not a client)
-    const isStaff = isAdmin || isConsultant;
-
-    // Check authentication on mount
-    useEffect(() => {
-        const user = localStorage.getItem("timely_user");
-        const authenticated = localStorage.getItem("timely_authenticated");
-        if (user && authenticated === "true") {
-            setUserData(JSON.parse(user));
-            setIsAuthed(true);
-        }
-        // Done checking auth - stop loading
-        setIsLoading(false);
-    }, []);
-
-    const handleLoginSuccess = (user: UserInfo) => {
-        setUserData(user);
-        setIsAuthed(true);
+    role?: string;
+  }) => {
+    const normalizedUser: UserInfo = {
+      customerId: user.customerId,
+      email: user.email,
+      name: user.name,
+      role: normalizeRole(user.role),
     };
 
-    const handleLogout = () => {
-        localStorage.removeItem("timely_user");
-        localStorage.removeItem("timely_authenticated");
-        setUserData(null);
-        setIsAuthed(false);
-        setActivePage("dashboard");
-        setPageHistory(["dashboard"]);
-    };
+    setUserData(normalizedUser);
+    setIsAuthed(true);
+    localStorage.setItem("timely_user", JSON.stringify(normalizedUser));
+    localStorage.setItem("timely_authenticated", "true");
 
-    const handleNavigation = (page: string) => {
-        if (page === "logout") { handleLogout(); return; }
+    // Decide initial landing page based on role
+    if (normalizedUser.role === "client") {
+      setActivePage("client_home");
+      setPageHistory(["client_home"]);
+    } else {
+      setActivePage("dashboard");
+      setPageHistory(["dashboard"]);
+    }
+  };
 
-        // Only admins can access admin pages
-        if ((page === "admin" || page === "EmailGenerator") && !isAdmin) return;
+  // 3) Logout
+  const handleLogout = () => {
+    setIsAuthed(false);
+    setUserData(null);
+    setActivePage("dashboard");
+    setPageHistory(["dashboard"]);
+    localStorage.removeItem("timely_user");
+    localStorage.removeItem("timely_authenticated");
+  };
 
-        // Add to history (avoid duplicates if same page)
-        if (page !== activePage) {
-            setPageHistory(prev => [...prev, page]);
-        }
-        setActivePage(page);
-    };
+  // 4) Guarded navigation (used by sidebar & navbar)
+  const handleNavigation = (page: string) => {
+    // Special: logout item in sidebar
+    if (page === "logout") {
+      handleLogout();
+      return;
+    }
 
-    // Go back to previous page
-    const handleBack = () => {
-        if (pageHistory.length > 1) {
-            const newHistory = [...pageHistory];
-            newHistory.pop(); // Remove current page
-            const previousPage = newHistory[newHistory.length - 1] || "dashboard";
-            setPageHistory(newHistory);
-            setActivePage(previousPage);
-        } else {
-            setActivePage("dashboard");
-        }
-    };
+    // Admin-only pages
+    const adminOnlyPages = new Set(["admin", "EmailGenerator"]);
+    if (adminOnlyPages.has(page) && !isAdmin) {
+      return;
+    }
 
-    // Theme-aware background classes
-    const bgClass = isDark
-        ? "bg-slate-950"
-        : "bg-gray-100";
+    // Staff-only pages (projects, clients tab, consultants tab, reports, hours, settings, dashboard)
+    const staffOnlyPages = new Set([
+      "dashboard",
+      "projects",
+      "client",
+      "consultants",
+      "reports",
+      "hours",
+      "settings",
+    ]);
 
-    // Show loading screen while checking auth - prevents flicker
-    if (isLoading) {
+    if (staffOnlyPages.has(page) && !isStaff) {
+      // Clients can't navigate into staff layout
+      return;
+    }
+
+    // Client-only page from here is just "client_home"
+    if (page === "client_home" && !isClient) {
+      return;
+    }
+
+    setActivePage(page);
+    setPageHistory((prev) => [...prev, page]);
+  };
+
+  // 5) Back button in sidebar
+  const handleBack = () => {
+    setPageHistory((prev) => {
+      if (prev.length <= 1) return prev;
+      const newHistory = [...prev];
+      newHistory.pop();
+      const previousPage = newHistory[newHistory.length - 1] || "dashboard";
+      setActivePage(previousPage);
+      return newHistory;
+    });
+  };
+
+  // 6) Decide what to render when not logged in
+  if (!isAuthed) {
+    return (
+      <div
+        className={`min-h-screen flex items-center justify-center ${
+          isDark ? "bg-slate-950" : "bg-slate-100"
+        }`}
+      >
+        <Login onLoginSuccess={handleLoginSuccess} />
+      </div>
+    );
+  }
+
+  // 7) Role-specific layout
+  // Client: their own dedicated portal, no sidebar/navbar
+  if (isClient) {
+    return (
+      <ClientsHomePage
+        userName={userData?.name || "Client"}
+        userEmail={userData?.email || ""}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // Admin / Consultant: full sidebar + navbar layout
+  const renderActivePage = () => {
+    switch (activePage) {
+      case "dashboard":
         return (
-            <div className={`min-h-screen flex items-center justify-center ${bgClass}`}>
-                <div className="flex flex-col items-center gap-4">
-                    <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                    <p className={isDark ? "text-slate-400" : "text-gray-500"}>Loading...</p>
-                </div>
-            </div>
+          <Dashboard
+            sidebarToggle={sidebarToggle}
+            setSidebarToggle={setSidebarToggle}
+            userName={userData?.name}
+            userEmail={userData?.email}
+            onNavigate={handleNavigation}
+          />
+        );
+      case "projects":
+        return <RealEstateProjects />;
+      case "client":
+        return <ClientsPage />;
+      case "consultants":
+        return <ConsultantsPage userRole={currentRole} />;
+      case "reports":
+        return <ReportsTab />;
+      case "hours":
+        return <HoursPage />;
+      case "admin":
+        return <AdminTab />;
+      case "EmailGenerator":
+        return <EmailGenerator />;
+      case "settings":
+        return <SettingsPage />;
+      default:
+        return (
+          <Dashboard
+            sidebarToggle={sidebarToggle}
+            setSidebarToggle={setSidebarToggle}
+            userName={userData?.name}
+            userEmail={userData?.email}
+            onNavigate={handleNavigation}
+          />
         );
     }
+  };
 
-    // Not logged in - show login screen
-    if (!isAuthed) return <Login onLoginSuccess={handleLoginSuccess} />;
+  return (
+    <div
+      className={`min-h-screen flex ${
+        isDark ? "bg-slate-950 text-white" : "bg-slate-100 text-gray-900"
+      }`}
+    >
+      {/* Sidebar (staff only) */}
+      <SidebarLayout
+        sidebarToggle={sidebarToggle}
+        setSidebarToggle={setSidebarToggle}
+        onNavigate={handleNavigation}
+        onBack={pageHistory.length > 1 ? handleBack : undefined}
+        isAdmin={isAdmin}
+        activePage={activePage}
+        userName={userData?.name}
+        userEmail={userData?.email}
+        userRole={currentRole}
+      />
 
-    // CLIENT VIEW - clients only see their own portal
-    if (isClient && userData) {
-        return <ClientsHomePage userData={userData} onLogout={handleLogout} />;
-    }
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col min-h-screen ml-0 md:ml-72 transition-all">
+        {/* Navbar with search + user menu */}
+        <Navbar
+          sidebarToggle={sidebarToggle}
+          setSidebarToggle={setSidebarToggle}
+          onNavigate={handleNavigation}
+          activePage={activePage}
+          onLogout={handleLogout}
+          userRole={currentRole}
+          userName={userData?.name}
+          userEmail={userData?.email}
+        />
 
-    // CONSULTANT VIEW - can see dashboard but limited admin access
-    // ADMIN VIEW - full access to everything
-    return (
-        <div className={`flex min-h-screen ${bgClass} transition-colors duration-300`}>
-            <SidebarLayout
-                sidebarToggle={sidebarToggle}
-                setSidebarToggle={setSidebarToggle}
-                onNavigate={handleNavigation}
-                onBack={handleBack}
-                isAdmin={isAdmin}
-                activePage={activePage}
-                userName={userData?.name}
-                userEmail={userData?.email}
-                userRole={userData?.role}
-            />
-
-            {/* Main content area */}
-            <div className={`flex-1 min-h-screen transition-all duration-300 ${sidebarToggle ? "ml-0" : "ml-72"}`}>
-                {/* Global Navbar - shows on all pages except dashboard (which has its own) */}
-                {activePage !== "dashboard" && (
-                    <Navbar
-                        sidebarToggle={sidebarToggle}
-                        setSidebarToggle={setSidebarToggle}
-                        activePage={activePage}
-                        onNavigate={handleNavigation}
-                        userName={userData?.name}
-                        userEmail={userData?.email}
-                    />
-                )}
-
-                {/* Page Content - add top padding when navbar is shown */}
-                <div className={activePage !== "dashboard" ? "pt-16" : ""}>
-                    {activePage === "dashboard" && (
-                        <Dashboard
-                            sidebarToggle={sidebarToggle}
-                            setSidebarToggle={setSidebarToggle}
-                            onNavigate={handleNavigation}
-                            userName={userData?.name}
-                            userEmail={userData?.email}
-                        />
-                    )}
-                    {activePage === "projects" && <RealEstateProjects />}
-                    {activePage === "client" && <ClientsPage />}
-                    {activePage === "consultants" && <ConsultantsPage />}
-                    {activePage === "reports" && <ReportsTab />}
-                    {activePage === "hours" && <HoursPage />}
-
-                    {/* Admin-only pages */}
-                    {activePage === "admin" && isAdmin && <AdminTab />}
-                    {activePage === "EmailGenerator" && isAdmin && (
-                        <div className={isDark ? "bg-slate-900 min-h-screen" : "bg-white min-h-screen"}>
-                            <EmailGenerator />
-                        </div>
-                    )}
-
-                    {/* Settings Page */}
-                    {activePage === "settings" && <SettingsPage />}
-                </div>
-            </div>
-        </div>
-    );
+        {/* Main page */}
+        <main className="flex-1 p-4 md:p-6">{renderActivePage()}</main>
+      </div>
+    </div>
+  );
 }
 
-// Main App with ThemeProvider wrapper
-export default function App() {
-    return (
-        <ThemeProvider>
-            <AppContent />
-        </ThemeProvider>
-    );
-}
+const App: React.FC = () => (
+  <ThemeProvider>
+    <AppContent />
+  </ThemeProvider>
+);
+
+export default App;
