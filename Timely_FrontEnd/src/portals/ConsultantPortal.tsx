@@ -12,11 +12,12 @@ import Settings from "../Tabs/settings";
 
 const ConsultantPortal = ({ user }: { user: any }) => {
   const [activePage, setActivePage] = useState("dashboard");
+  const [sidebarToggle, setSidebarToggle] = useState(false);
 
   const renderPage = () => {
     switch (activePage) {
       case "dashboard":
-        return <Dashboard />;
+        return <Dashboard sidebarToggle={false} onNavigate={setActivePage} />;
       case "client":
         return <Clients />;
       case "consultants":
@@ -30,7 +31,7 @@ const ConsultantPortal = ({ user }: { user: any }) => {
       case "settings":
         return <Settings />;
       default:
-        return <Dashboard />;
+        return <Dashboard sidebarToggle={false} onNavigate={setActivePage} />;
     }
   };
 
@@ -48,16 +49,16 @@ const ConsultantPortal = ({ user }: { user: any }) => {
         userEmail={user.email}
         userRole={user.role}
       />
-      <div className="ml-72">
         <Navbar
           onNavigate={setActivePage}
-          user={user}
           activePage={activePage}
+          sidebarToggle={sidebarToggle}
+          setSidebarToggle={setSidebarToggle}
         />
+        
         <main className="p-6">{renderPage()}</main>
-      </div>
-    </>
-  );
-};
+      </>
+    );
+  };
 
 export default ConsultantPortal;

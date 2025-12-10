@@ -13,13 +13,22 @@ import AdminPanel from "../Tabs/admin";
 
 import EmailGenerator from "../Views_Layouts/EmailGenerator";
 
+
+const [activePage, setActivePage] = useState("dashboard");
+const [sidebarToggle, setSidebarToggle] = useState(true);
+
 const AdminPortal = ({ user }: { user: any }) => {
   const [activePage, setActivePage] = useState("dashboard");
 
   const renderPage = () => {
     switch (activePage) {
       case "dashboard":
-        return <Dashboard />;
+        return (
+          <Dashboard
+            sidebarToggle={sidebarToggle}
+            onNavigate={setActivePage}
+          />
+        );
       case "client":
         return <Clients />;
       case "consultants":
@@ -37,7 +46,12 @@ const AdminPortal = ({ user }: { user: any }) => {
       case "EmailGenerator":
         return <EmailGenerator />;
       default:
-        return <Dashboard />;
+        return (
+          <Dashboard
+            sidebarToggle={sidebarToggle}
+            onNavigate={setActivePage}
+          />
+        );
     }
   };
 
@@ -59,9 +73,13 @@ const AdminPortal = ({ user }: { user: any }) => {
       <div className="ml-72">
         <Navbar
           onNavigate={setActivePage}
-          user={user}
           activePage={activePage}
-        />
+          userName={user.name}
+          userEmail={user.email}
+          userRole={user.role} sidebarToggle={false} setSidebarToggle={function (v: boolean): void {
+            throw new Error("Function not implemented.");
+          } }/>
+
         <main className="p-6">{renderPage()}</main>
       </div>
     </>
