@@ -1,389 +1,43 @@
-// src/Style_Components/Sidebar.tsx
-import React, { useState } from "react";
-import {
-  FaHome,
-  FaUserCog,
-  FaRegSun,
-  FaClock,
-  FaUsers,
-  FaUserTie,
-  FaChartBar,
-  FaSignOutAlt,
-  FaChevronLeft,
-  FaChevronRight,
-  FaEnvelope,
-  FaArrowLeft,
-} from "react-icons/fa";
-import { FaRegFolder } from "react-icons/fa6";
-import { useTheme } from "../Views_Layouts/ThemeContext";
+import React from "react";
 
-type Props = {
+type SidebarProps = {
   sidebarToggle: boolean;
-  setSidebarToggle?: (value: boolean) => void;
   onNavigate: (page: string) => void;
-  onBack?: () => void;
   isAdmin: boolean;
-  activePage?: string;
-  userName?: string;
-  userEmail?: string;
-  userRole?: string;
+  activePage: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
 };
 
-const Sidebar: React.FC<Props> = ({
+const Sidebar = ({
   sidebarToggle,
-  setSidebarToggle,
   onNavigate,
-  onBack,
   isAdmin,
-  activePage = "dashboard",
-  userName = "User",
-  userEmail = "",
-  userRole = "client",
-}) => {
-  const { isDark } = useTheme();
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-  const [showProfileDetails, setShowProfileDetails] = useState(false);
-
-  const styles = {
-    sidebar: isDark
-      ? "bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-slate-800/50 shadow-black/20"
-      : "bg-white border-gray-200 shadow-gray-200/50",
-    text: isDark ? "text-white" : "text-gray-900",
-    textMuted: isDark ? "text-slate-400" : "text-gray-500",
-    textSubtle: isDark ? "text-slate-500" : "text-gray-400",
-    menuActive: isDark
-      ? "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/30"
-      : "bg-blue-50 border-blue-200",
-    menuHover: isDark
-      ? "hover:bg-slate-700/50 hover:border-slate-600/50"
-      : "hover:bg-gray-100 hover:border-gray-200",
-    menuActiveText: isDark ? "text-cyan-400" : "text-blue-600",
-    menuActiveIcon: isDark
-      ? "bg-gradient-to-br from-cyan-500 to-blue-500 shadow-cyan-500/25"
-      : "bg-blue-500",
-    menuIcon: isDark ? "bg-slate-700/50 text-slate-400" : "bg-gray-100 text-gray-500",
-    menuIconHover: isDark ? "bg-slate-600 text-white" : "bg-gray-200 text-gray-700",
-    card: isDark
-      ? "bg-slate-800/50 border-slate-700/50 hover:bg-slate-800/70"
-      : "bg-gray-50 border-gray-200 hover:bg-gray-100",
-    divider: isDark
-      ? "bg-gradient-to-r from-transparent via-slate-700 to-transparent"
-      : "bg-gray-200",
-    button: isDark
-      ? "bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700"
-      : "bg-white hover:bg-gray-100 text-gray-500 border-gray-200",
-    activeBar: isDark
-      ? "bg-gradient-to-b from-cyan-400 to-blue-500"
-      : "bg-blue-500",
-  };
-
-  const getInitials = (name: string) => {
-    const parts = name.trim().split(" ");
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-    }
-    return name.slice(0, 2).toUpperCase();
-  };
-
-  // Staff main menu (this sidebar is only used for admin + consultant)
-  const menuItems = [
-    { id: "dashboard", label: "Dashboard", icon: FaHome },
-    { id: "projects", label: "Projects", icon: FaRegFolder },
-    { id: "client", label: "Clients", icon: FaUsers },
-    { id: "consultants", label: "Consultants", icon: FaUserTie },
-    { id: "reports", label: "Reports", icon: FaChartBar },
-    { id: "hours", label: "Hours", icon: FaClock },
-  ];
-
-  // Admin-only section
-  const adminItems = [
-    { id: "admin", label: "Admin Panel", icon: FaUserCog },
-    { id: "EmailGenerator", label: "Create Account", icon: FaEnvelope },
-  ];
-
-  const bottomItems = [{ id: "settings", label: "Settings", icon: FaRegSun }];
-
-  const NavItem = ({
-    id,
-    label,
-    icon: Icon,
-    isActive,
-    isLogout = false,
-  }: {
-    id: string;
-    label: string;
-    icon: React.ComponentType<{ className?: string }>;
-    isActive: boolean;
-    isLogout?: boolean;
-  }) => {
-    const isHovered = hoveredItem === id;
-
-    return (
-      <li
-        className={`
-          relative mb-1 rounded-xl cursor-pointer select-none
-          transition-all duration-200 ease-out border
-          ${
-            isActive
-              ? styles.menuActive
-              : isLogout
-              ? "hover:bg-red-500/10 border-transparent hover:border-red-500/30"
-              : `${styles.menuHover} border-transparent`
-          }
-        `}
-        onClick={() => onNavigate(id)}
-        onMouseEnter={() => setHoveredItem(id)}
-        onMouseLeave={() => setHoveredItem(null)}
-      >
-        {isActive && (
-          <div
-            className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 ${styles.activeBar} rounded-r-full`}
-          />
-        )}
-
-        <div
-          className={`
-            px-4 py-3 flex items-center gap-3 transition-colors duration-200
-            ${
-              isActive
-                ? styles.menuActiveText
-                : isLogout
-                ? "text-red-400"
-                : styles.textMuted
-            }
-            ${isHovered && !isActive && !isLogout ? styles.text : ""}
-          `}
-        >
-          <div
-            className={`
-              w-9 h-9 rounded-lg flex items-center justify-center
-              transition-all duration-200
-              ${
-                isActive
-                  ? `${styles.menuActiveIcon} text-white shadow-lg`
-                  : isLogout
-                  ? "bg-red-500/10 text-red-400"
-                  : styles.menuIcon
-              }
-              ${
-                isHovered && !isActive && !isLogout
-                  ? `${styles.menuIconHover} scale-105`
-                  : ""
-              }
-            `}
-          >
-            <Icon className="w-4 h-4" />
-          </div>
-          <span className={`font-medium text-sm ${isActive ? styles.text : ""}`}>
-            {label}
-          </span>
-
-          {isHovered && !isActive && (
-            <FaChevronRight
-              className={`
-                w-3 h-3 ml-auto animate-pulse
-                ${isLogout ? "text-red-400" : styles.textSubtle}
-              `}
-            />
-          )}
-        </div>
-      </li>
-    );
-  };
-
+  activePage,
+  userName,
+  userEmail,
+  userRole,
+}: SidebarProps) => {
   return (
-    <aside
-      className={`
-        ${sidebarToggle ? "w-0 -translate-x-full" : "w-72 translate-x-0"}
-        ${styles.sidebar}
-        fixed top-0 left-0 h-full
-        border-r transition-all duration-300 ease-in-out
-        z-40 overflow-hidden shadow-2xl
-      `}
-    >
-      {isDark && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-0 left-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-          <div className="absolute bottom-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
-        </div>
-      )}
-
-      <div className="relative h-full flex flex-col px-4 py-6">
-        {/* Top: back button + logo */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 px-2">
-            {onBack && activePage !== "dashboard" && (
-              <button
-                onClick={onBack}
-                className={`w-10 h-10 ${styles.button} border rounded-xl flex items-center justify-center hover:text-white transition-all`}
-                title="Go back"
-              >
-                <FaArrowLeft className="w-4 h-4" />
-              </button>
-            )}
-
-            {(!onBack || activePage === "dashboard") && (
-              <div
-                className={`w-10 h-10 ${
-                  isDark
-                    ? "bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/25"
-                    : "bg-blue-600"
-                } rounded-xl flex items-center justify-center`}
-              >
-                <span className="text-white font-bold text-lg">T</span>
-              </div>
-            )}
-
-            <div>
-              <h1 className={`text-xl ${styles.text} font-bold tracking-tight`}>
-                Timely
-              </h1>
-              <p className={`text-xs ${styles.textSubtle}`}>Management Portal</p>
-            </div>
-          </div>
-        </div>
-
-        {/* MAIN NAVIGATION */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Main Menu */}
-          <div className="mb-6">
-            <p
-              className={`px-4 mb-3 text-xs font-semibold ${styles.textSubtle} uppercase tracking-wider`}
-            >
-              Main Menu
-            </p>
-            <ul>
-              {menuItems.map((item) => (
-                <NavItem
-                  key={item.id}
-                  id={item.id}
-                  label={item.label}
-                  icon={item.icon}
-                  isActive={activePage === item.id}
-                />
-              ))}
-            </ul>
-          </div>
-
-          {/* Admin Section (admin only) */}
-          {isAdmin && (
-            <div className="mb-6">
-              <p
-                className={`px-4 mb-3 text-xs font-semibold ${
-                  isDark ? "text-amber-500/80" : "text-amber-600"
-                } uppercase tracking-wider`}
-              >
-                Administration
-              </p>
-              <ul>
-                {adminItems.map((item) => (
-                  <NavItem
-                    key={item.id}
-                    id={item.id}
-                    label={item.label}
-                    icon={item.icon}
-                    isActive={activePage === item.id}
-                  />
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-
-        {/* Bottom: Settings + Logout + User Card */}
-        <div className="mt-auto">
-          <div className={`h-px ${styles.divider} mb-4`} />
-
-          <ul>
-            {bottomItems.map((item) => (
-              <NavItem
-                key={item.id}
-                id={item.id}
-                label={item.label}
-                icon={item.icon}
-                isActive={activePage === item.id}
-              />
-            ))}
-            <NavItem
-              id="logout"
-              label="Logout"
-              icon={FaSignOutAlt}
-              isActive={false}
-              isLogout={true}
-            />
-          </ul>
-
-          {/* User card */}
-          <div
-            className={`mt-4 p-3 ${styles.card} rounded-xl border cursor-pointer transition-all`}
-            onClick={() => setShowProfileDetails(!showProfileDetails)}
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm ${
-                  userRole === "admin"
-                    ? "bg-gradient-to-br from-amber-500 to-orange-500"
-                    : userRole === "consultant"
-                    ? "bg-gradient-to-br from-purple-500 to-pink-500"
-                    : "bg-gradient-to-br from-cyan-500 to-blue-500"
-                }`}
-              >
-                {getInitials(userName)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium ${styles.text}`}>
-                  {userRole === "admin"
-                    ? "Admin"
-                    : userRole === "consultant"
-                    ? "Consultant"
-                    : "Client"}
-                </p>
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-                  <span className={`text-xs ${styles.textSubtle}`}>Online</span>
-                </div>
-              </div>
-              <FaChevronRight
-                className={`w-3 h-3 ${styles.textSubtle} transition-transform duration-200 ${
-                  showProfileDetails ? "rotate-90" : ""
-                }`}
-              />
-            </div>
-
-            {showProfileDetails && (
-              <div
-                className={`mt-3 pt-3 border-t ${
-                  isDark ? "border-slate-700/50" : "border-gray-200"
-                } space-y-2`}
-              >
-                <div>
-                  <p className={`text-xs ${styles.textSubtle}`}>Name</p>
-                  <p className={`text-sm ${styles.text} truncate`}>{userName}</p>
-                </div>
-                <div>
-                  <p className={`text-xs ${styles.textSubtle}`}>Email</p>
-                  <p className={`text-sm ${styles.textMuted} truncate`}>
-                    {userEmail || "No email"}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {setSidebarToggle && (
-          <button
-            onClick={() => setSidebarToggle(!sidebarToggle)}
-            className={`absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 ${styles.button} border rounded-r-lg flex items-center justify-center hover:text-white transition-all`}
-          >
-            {sidebarToggle ? (
-              <FaChevronRight className="w-3 h-3" />
-            ) : (
-              <FaChevronLeft className="w-3 h-3" />
-            )}
-          </button>
+    <aside className="fixed h-screen w-64 bg-slate-800 text-white p-4">
+      <h2 className="text-lg font-semibold mb-2">{userName}</h2>
+      <p className="text-sm mb-4">{userEmail} ({userRole})</p>
+      <nav className="flex flex-col space-y-2">
+        <button onClick={() => onNavigate("dashboard")}>Dashboard</button>
+        <button onClick={() => onNavigate("client")}>Clients</button>
+        <button onClick={() => onNavigate("projects")}>Projects</button>
+        <button onClick={() => onNavigate("hours")}>Hours</button>
+        <button onClick={() => onNavigate("reports")}>Reports</button>
+        <button onClick={() => onNavigate("settings")}>Settings</button>
+        {isAdmin && (
+          <>
+            <button onClick={() => onNavigate("consultants")}>Consultants</button>
+            <button onClick={() => onNavigate("admin")}>Admin</button>
+            <button onClick={() => onNavigate("EmailGenerator")}>Email Generator</button>
+          </>
         )}
-      </div>
+      </nav>
     </aside>
   );
 };
