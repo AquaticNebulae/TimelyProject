@@ -42,6 +42,9 @@ const hoursLogsCsvPath = path.join(__dirname, "data", "hours_logs.csv");
 const projectDetailsCsvPath = path.join(__dirname, "data", "project_details.csv");
 const projectCommentsCsvPath = path.join(__dirname, "data", "project_comments.csv");
 const projectAttachmentsCsvPath = path.join(__dirname, "data", "project_attachments.csv");
+const teamFeedCsvPath = path.join(__dirname, "data", "team_feed.csv");
+const teamFeedLikesCsvPath = path.join(__dirname, "data", "team_feed_likes.csv");
+const emailsCsvPath = path.join(__dirname, "data", "emails_outbox.csv");
 
 
 // ==========================================================
@@ -68,6 +71,9 @@ ensureFile(hoursLogsCsvPath, "LogID,ProjectID,ConsultantID,Date,Hours,Descriptio
 ensureFile(projectDetailsCsvPath, "ProjectID,DateCreated,DateDue,Description,CreatedAt,UpdatedAt\n");
 ensureFile(projectCommentsCsvPath, "CommentID,ProjectID,Author,CommentText,CreatedAt\n");
 ensureFile(projectAttachmentsCsvPath, "AttachmentID,ProjectID,FileName,FileSize,FileType,UploadedBy,CreatedAt\n");
+ensureFile(teamFeedCsvPath, "PostID,AuthorName,AuthorEmail,AuthorRole,Content,CreatedAt\n");
+ensureFile(teamFeedLikesCsvPath, "LikeID,PostID,UserEmail,CreatedAt\n");
+ensureFile(emailsCsvPath, "EmailID,To,From,Subject,Body,Status,CreatedAt,SentAt\n");
 
 
 // ==========================================================
@@ -131,6 +137,116 @@ function appendAuditLog(
 
 
 // ==========================================================
+//  EMAIL SYSTEM (LOCAL TESTING)
+//  Stores emails in CSV instead of actually sending them
+//  TODO: Replace sendEmail() with real SMTP (SendGrid, AWS SES)
+// ==========================================================
+
+interface EmailMessage {
+    to: string;
+    from?: string;
+    subject: string;
+    body: string;
+}
+
+// Send email - stores in CSV for local testing
+// Replace this function body with real SMTP for production
+async function sendEmail(email: EmailMessage): Promise<{ success: boolean; emailId?: string; error?: string }> {
+    try {
+        const numericId = getNextIdFromCsv(emailsCsvPath);
+        const emailCode = formatId("EM", numericId);
+        const now = new Date().toISOString();
+
+        const fields = [
+            String(numericId),
+            email.to || "",
+            email.from || "noreply@timely.com",
+            email.subject || "",
+            email.body || "",
+            "sent",
+            now,
+            now
+        ];
+
+        const row = fields
+            .map((f) => {
+                const v = f ?? "";
+                if (v.includes(",") || v.includes('"') || v.includes("\n")) {
+                    return `"${v.replace(/"/g, '""')}"`;
+                }
+                return v;
+            })
+            .join(",") + "\n";
+
+        fs.appendFileSync(emailsCsvPath, row, "utf8");
+        console.log(`[EMAIL] Mock email sent to ${email.to}: ${email.subject}`);
+
+        return { success: true, emailId: emailCode };
+    } catch (err) {
+        console.error("Error sending email:", err);
+        return { success: false, error: String(err) };
+    }
+}
+
+// Helper to get client email by ID
+function getClientEmail(clientId: string): string | null {
+    if (!fs.existsSync(csvPath)) return null;
+    const content = fs.readFileSync(csvPath, "utf8").trim();
+    if (!content) return null;
+    const lines = content.split(/\r?\n/);
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line || !line.trim()) continue;
+        const cols = line.split(",");
+        if (cols[0] === String(clientId)) return cols[4] || null;
+    }
+    return null;
+}
+
+// Helper to get client name by ID
+function getClientName(clientId: string): string | null {
+    if (!fs.existsSync(csvPath)) return null;
+    const content = fs.readFileSync(csvPath, "utf8").trim();
+    if (!content) return null;
+    const lines = content.split(/\r?\n/);
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line || !line.trim()) continue;
+        const cols = line.split(",");
+        if (cols[0] === String(clientId)) return `${cols[1] || ""} ${cols[3] || ""}`.trim() || null;
+    }
+    return null;
+}
+
+// Helper to parse CSV fields that might be quoted
+function parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+
+        if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+                current += '"';
+                i++;
+            } else {
+                inQuotes = !inQuotes;
+            }
+        } else if (char === ',' && !inQuotes) {
+            result.push(current);
+            current = "";
+        } else {
+            current += char;
+        }
+    }
+    result.push(current);
+    return result;
+}
+
+
+// ==========================================================
 //  LOGIN - THE MAIN ROLE SYSTEM
 //  Checks who is logging in and assigns them a role:
 //  - "admin" = full access to everything
@@ -149,7 +265,6 @@ app.post("/api/login", (req: Request, res: Response) => {
 
     try {
         // STEP 1: Check if they're a hardcoded admin
-        // These are the main admin accounts that always exist
         const adminAccounts = [
             { email: "fryv@timely.com", password: "admin123", customerId: "admin-1", name: "Admin Fryv" },
             { email: "mardij@timely.com", password: "admin123", customerId: "admin-2", name: "Admin Mardij" },
@@ -170,8 +285,7 @@ app.post("/api/login", (req: Request, res: Response) => {
             }
         }
 
-        // STEP 2: Check if they're a consultant from the consultants CSV
-        // Consultants have their own passwords stored in the CSV
+        // STEP 2: Check if they're a consultant
         if (fs.existsSync(consultantsCsvPath)) {
             const content = fs.readFileSync(consultantsCsvPath, "utf8").trim();
             if (content) {
@@ -181,7 +295,6 @@ app.post("/api/login", (req: Request, res: Response) => {
                     if (!line || !line.trim()) continue;
 
                     const cols = line.split(",");
-                    // CSV columns: ConsultantID, FirstName, LastName, Email, TempPassword, Role
                     const consultantEmail = (cols[3] ?? "").toLowerCase();
                     const consultantPassword = cols[4] ?? "";
 
@@ -202,8 +315,7 @@ app.post("/api/login", (req: Request, res: Response) => {
             }
         }
 
-        // STEP 3: Check if they're a client from the users CSV
-        // Clients use the tempPassword that was set when their account was created
+        // STEP 3: Check if they're a client
         if (fs.existsSync(csvPath)) {
             const content = fs.readFileSync(csvPath, "utf8").trim();
             if (content) {
@@ -213,7 +325,6 @@ app.post("/api/login", (req: Request, res: Response) => {
                     if (!line || !line.trim()) continue;
 
                     const cols = line.split(",");
-                    // CSV columns: CustomerID, FirstName, MiddleName, LastName, Email, TempPassword
                     const userEmail = (cols[4] ?? "").toLowerCase();
                     const userPassword = cols[5] ?? "";
 
@@ -234,7 +345,6 @@ app.post("/api/login", (req: Request, res: Response) => {
             }
         }
 
-        // If we get here, no matching account was found
         return res.status(401).json({ error: "Invalid email or password." });
 
     } catch (err) {
@@ -247,11 +357,10 @@ app.post("/api/login", (req: Request, res: Response) => {
 // ==========================================================
 //  USERS / CLIENTS
 //  Create, read, and delete client accounts
-//  Clients are customers who use your services
 // ==========================================================
 
-// Create a new client (used by Email Generator)
-app.post("/api/users-csv", (req: Request, res: Response) => {
+// Create a new client (sends welcome email)
+app.post("/api/users-csv", async (req: Request, res: Response) => {
     const { firstName, middleName, lastName, email, tempPassword, performedBy } = req.body || {};
 
     if (!firstName || !lastName || !email || !tempPassword) {
@@ -281,7 +390,7 @@ app.post("/api/users-csv", (req: Request, res: Response) => {
             })
             .join(",") + "\n";
 
-    fs.appendFile(csvPath, row, (err) => {
+    fs.appendFile(csvPath, row, async (err) => {
         if (err) {
             console.error("Error writing users CSV:", err);
             return res.status(500).json({ error: "Failed to write CSV file." });
@@ -295,6 +404,26 @@ app.post("/api/users-csv", (req: Request, res: Response) => {
             performedBy || "unknown_admin",
             `Client created: ${firstName} ${lastName} (${email})`
         );
+
+        // Send welcome email
+        await sendEmail({
+            to: email,
+            subject: "Welcome to Timely - Your Account Details",
+            body: `Hi ${firstName},
+
+Welcome to Timely! Your account has been created.
+
+Here are your login details:
+Email: ${email}
+Temporary Password: ${tempPassword}
+
+Please log in at: http://localhost:3000/login
+
+For security, please change your password after your first login.
+
+Best regards,
+The Timely Team`
+        });
 
         return res.json({ success: true, customerId: numericId, clientCode });
     });
@@ -423,11 +552,10 @@ app.get("/api/users-report/csv", (req: Request, res: Response) => {
 // ==========================================================
 //  CONSULTANTS
 //  Create, read, and delete consultant accounts
-//  Consultants are staff members who work on client projects
 // ==========================================================
 
-// Create a new consultant
-app.post("/api/consultants", (req: Request, res: Response) => {
+// Create a new consultant (sends welcome email)
+app.post("/api/consultants", async (req: Request, res: Response) => {
     const { firstName, lastName, email, tempPassword, role, performedBy } = req.body || {};
 
     if (!firstName || !lastName || !email) {
@@ -436,8 +564,6 @@ app.post("/api/consultants", (req: Request, res: Response) => {
 
     const numericId = nextConsultantId;
     const consultantCode = formatId("CO", numericId);
-
-    // Default password if none provided
     const password = tempPassword || "consultant123";
 
     const fields = [
@@ -460,7 +586,7 @@ app.post("/api/consultants", (req: Request, res: Response) => {
             })
             .join(",") + "\n";
 
-    fs.appendFile(consultantsCsvPath, row, (err) => {
+    fs.appendFile(consultantsCsvPath, row, async (err) => {
         if (err) {
             console.error("Error writing consultants CSV:", err);
             return res.status(500).json({ error: "Failed to write consultants CSV." });
@@ -474,6 +600,24 @@ app.post("/api/consultants", (req: Request, res: Response) => {
             performedBy || "unknown_admin",
             `Consultant created: ${firstName} ${lastName} (${email})`
         );
+
+        // Send welcome email
+        await sendEmail({
+            to: email,
+            subject: "Welcome to Timely - Consultant Account Created",
+            body: `Hi ${firstName},
+
+Your consultant account has been created at Timely.
+
+Here are your login details:
+Email: ${email}
+Password: ${password}
+
+Please log in at: http://localhost:3000/login
+
+Best regards,
+The Timely Team`
+        });
 
         return res.json({ success: true, consultantId: numericId, consultantCode });
     });
@@ -587,7 +731,6 @@ app.post("/api/consultants-delete", (req: Request, res: Response) => {
 // ==========================================================
 //  PROJECTS
 //  Create, read, and delete projects
-//  Projects are work items that clients pay for
 // ==========================================================
 
 // Create a new project
@@ -739,14 +882,30 @@ app.post("/api/projects-delete", (req: Request, res: Response) => {
     }
 });
 
-// Assign a project to a client (and optionally consultants)
-app.post("/api/projects/assign", (req: Request, res: Response) => {
+// Assign a project to a client (sends notification email)
+app.post("/api/projects/assign", async (req: Request, res: Response) => {
     const { clientId, projectId, consultantIds, performedBy } = req.body || {};
     if (!clientId || !projectId) {
         return res.status(400).json({ error: "clientId and projectId are required." });
     }
 
     const now = new Date().toISOString();
+
+    // Get project name for email
+    let projectName = `Project ${projectId}`;
+    if (fs.existsSync(projectsCsvPath)) {
+        const pContent = fs.readFileSync(projectsCsvPath, "utf8").trim();
+        if (pContent) {
+            const pLines = pContent.split(/\r?\n/);
+            for (let i = 1; i < pLines.length; i++) {
+                const cols = pLines[i].split(",");
+                if (cols[0] === String(projectId)) {
+                    projectName = cols[1] || projectName;
+                    break;
+                }
+            }
+        }
+    }
 
     // Mark old projects as not current, add new one as current
     let content = fs.readFileSync(clientProjectsCsvPath, "utf8").trim();
@@ -814,6 +973,27 @@ app.post("/api/projects/assign", (req: Request, res: Response) => {
         `Project ${projectId} assigned to client ${clientId}`
     );
 
+    // Send email notification to client
+    const clientEmail = getClientEmail(String(clientId));
+    const clientName = getClientName(String(clientId));
+    if (clientEmail) {
+        await sendEmail({
+            to: clientEmail,
+            subject: `New Project Assigned: ${projectName}`,
+            body: `Hi ${clientName || "there"},
+
+A new project has been assigned to you:
+
+Project: ${projectName}
+Project Code: ${formatId("P", Number(projectId))}
+
+Log in to your portal to view the project details and track progress.
+
+Best regards,
+The Timely Team`
+        });
+    }
+
     return res.json({ success: true });
 });
 
@@ -823,8 +1003,8 @@ app.post("/api/projects/assign", (req: Request, res: Response) => {
 //  Links clients to the consultants who work with them
 // ==========================================================
 
-// Assign a consultant to a client
-app.post("/api/client-consultants/assign", (req: Request, res: Response) => {
+// Assign a consultant to a client (sends notification email)
+app.post("/api/client-consultants/assign", async (req: Request, res: Response) => {
     const { clientId, consultantId, performedBy } = req.body || {};
     if (!clientId || !consultantId) {
         return res.status(400).json({ error: "clientId and consultantId are required." });
@@ -841,21 +1021,29 @@ app.post("/api/client-consultants/assign", (req: Request, res: Response) => {
     const consultantLines: string[] = consultantContent.split(/\r?\n/).slice(1);
 
     let clientExists = false;
+    let clientEmail = "";
+    let clientName = "";
     for (const line of clientLines) {
         if (!line || !line.trim()) continue;
         const cols = line.split(",");
         if (cols[0] === String(clientId)) {
             clientExists = true;
+            clientEmail = cols[4] || "";
+            clientName = `${cols[1] || ""} ${cols[3] || ""}`.trim();
             break;
         }
     }
 
     let consultantExists = false;
+    let consultantName = "";
+    let consultantEmail = "";
     for (const line of consultantLines) {
         if (!line || !line.trim()) continue;
         const cols = line.split(",");
         if (cols[0] === String(consultantId)) {
             consultantExists = true;
+            consultantName = `${cols[1] || ""} ${cols[2] || ""}`.trim();
+            consultantEmail = cols[3] || "";
             break;
         }
     }
@@ -902,6 +1090,24 @@ app.post("/api/client-consultants/assign", (req: Request, res: Response) => {
         `Consultant ${consultantId} assigned to client ${clientId}`
     );
 
+    // Notify client about their new consultant
+    if (clientEmail) {
+        await sendEmail({
+            to: clientEmail,
+            subject: `Your Consultant: ${consultantName}`,
+            body: `Hi ${clientName || "there"},
+
+${consultantName} has been assigned as your consultant.
+
+You can reach them at: ${consultantEmail}
+
+They will be your main point of contact for your projects.
+
+Best regards,
+The Timely Team`
+        });
+    }
+
     return res.json({ success: true });
 });
 
@@ -938,7 +1144,6 @@ app.get("/api/client-consultants", (req: Request, res: Response) => {
 
 // ==========================================================
 //  AUDIT LOGS / ACTIVITY FEED
-//  Shows recent activity in the system
 // ==========================================================
 
 app.get("/api/audit-logs/latest", (req: Request, res: Response) => {
@@ -975,10 +1180,8 @@ app.get("/api/audit-logs/latest", (req: Request, res: Response) => {
 
 // ==========================================================
 //  HOURS LOGGING
-//  Track how many hours consultants spend on projects
 // ==========================================================
 
-// Log hours worked
 app.post("/api/hours-logs", (req: Request, res: Response) => {
     const { projectId, consultantId, date, hours, description, performedBy } = req.body || {};
 
@@ -1028,7 +1231,6 @@ app.post("/api/hours-logs", (req: Request, res: Response) => {
     });
 });
 
-// Get hours for a specific project
 app.get("/api/hours-logs/:projectId", (req: Request, res: Response) => {
     const { projectId } = req.params;
 
@@ -1071,7 +1273,6 @@ app.get("/api/hours-logs/:projectId", (req: Request, res: Response) => {
     }
 });
 
-// Get all hours (optionally filter by consultant)
 app.get("/api/hours-logs", (req: Request, res: Response) => {
     const { consultantId } = req.query;
 
@@ -1116,7 +1317,6 @@ app.get("/api/hours-logs", (req: Request, res: Response) => {
     }
 });
 
-// Delete an hours log entry
 app.post("/api/hours-logs-delete", (req: Request, res: Response) => {
     const { logId, performedBy } = req.body || {};
 
@@ -1183,10 +1383,8 @@ app.post("/api/hours-logs-delete", (req: Request, res: Response) => {
 
 // ==========================================================
 //  PROJECT DETAILS
-//  Extra info about projects (dates, descriptions, etc)
 // ==========================================================
 
-// Create or update project details
 app.post("/api/project-details", (req: Request, res: Response) => {
     const { projectId, dateCreated, dateDue, description, performedBy } = req.body || {};
 
@@ -1286,7 +1484,6 @@ app.post("/api/project-details", (req: Request, res: Response) => {
     }
 });
 
-// Get details for a specific project
 app.get("/api/project-details/:projectId", (req: Request, res: Response) => {
     const { projectId } = req.params;
 
@@ -1332,10 +1529,8 @@ app.get("/api/project-details/:projectId", (req: Request, res: Response) => {
 
 // ==========================================================
 //  PROJECT COMMENTS
-//  Notes and messages attached to projects
 // ==========================================================
 
-// Add a comment to a project
 app.post("/api/project-comments", (req: Request, res: Response) => {
     const { projectId, author, commentText, performedBy } = req.body || {};
 
@@ -1383,7 +1578,6 @@ app.post("/api/project-comments", (req: Request, res: Response) => {
     });
 });
 
-// Get all comments for a project
 app.get("/api/project-comments/:projectId", (req: Request, res: Response) => {
     const { projectId } = req.params;
 
@@ -1404,7 +1598,7 @@ app.get("/api/project-comments/:projectId", (req: Request, res: Response) => {
             const line = lines[i];
             if (!line || !line.trim()) continue;
 
-            const cols = line.split(",");
+            const cols = parseCSVLine(line);
 
             if (cols[1] === String(projectId)) {
                 data.push({
@@ -1427,10 +1621,8 @@ app.get("/api/project-comments/:projectId", (req: Request, res: Response) => {
 
 // ==========================================================
 //  PROJECT ATTACHMENTS
-//  Files uploaded to projects (just metadata, not actual files)
 // ==========================================================
 
-// Record a file attachment
 app.post("/api/project-attachments", (req: Request, res: Response) => {
     const { projectId, fileName, fileSize, fileType, uploadedBy } = req.body || {};
 
@@ -1480,7 +1672,6 @@ app.post("/api/project-attachments", (req: Request, res: Response) => {
     });
 });
 
-// Get all attachments for a project
 app.get("/api/project-attachments/:projectId", (req: Request, res: Response) => {
     const { projectId } = req.params;
 
@@ -1520,6 +1711,428 @@ app.get("/api/project-attachments/:projectId", (req: Request, res: Response) => 
     } catch (err) {
         console.error("Error reading attachments CSV:", err);
         return res.status(500).json({ error: "Failed to read attachments." });
+    }
+});
+
+
+// ==========================================================
+//  TEAM FEED
+// ==========================================================
+
+app.post("/api/team-feed", (req: Request, res: Response) => {
+    const { authorName, authorEmail, authorRole, content } = req.body || {};
+
+    if (!authorName || !authorEmail || !content) {
+        return res.status(400).json({ error: "authorName, authorEmail, and content are required." });
+    }
+
+    const numericId = getNextIdFromCsv(teamFeedCsvPath);
+    const postCode = formatId("TF", numericId);
+
+    const fields = [
+        String(numericId),
+        authorName || "",
+        authorEmail || "",
+        authorRole || "staff",
+        content || "",
+        new Date().toISOString()
+    ];
+
+    const row =
+        fields
+            .map((f) => {
+                const v = f ?? "";
+                if (v.includes(",") || v.includes('"') || v.includes("\n")) {
+                    return `"${v.replace(/"/g, '""')}"`;
+                }
+                return v;
+            })
+            .join(",") + "\n";
+
+    fs.appendFile(teamFeedCsvPath, row, (err) => {
+        if (err) {
+            console.error("Error writing team feed CSV:", err);
+            return res.status(500).json({ error: "Failed to create post." });
+        }
+
+        appendAuditLog(
+            "CREATE_POST",
+            "team_feed",
+            postCode,
+            authorEmail,
+            `Team feed post created by ${authorName}`
+        );
+
+        return res.json({
+            success: true,
+            postId: numericId,
+            postCode,
+            post: {
+                postId: String(numericId),
+                authorName,
+                authorEmail,
+                authorRole: authorRole || "staff",
+                content,
+                createdAt: fields[5],
+                likes: 0,
+                likedByUser: false
+            }
+        });
+    });
+});
+
+app.get("/api/team-feed", (req: Request, res: Response) => {
+    const { userEmail, limit } = req.query;
+    const maxPosts = Number(limit) || 50;
+
+    try {
+        if (!fs.existsSync(teamFeedCsvPath)) {
+            return res.json({ data: [] });
+        }
+
+        const content = fs.readFileSync(teamFeedCsvPath, "utf8").trim();
+        if (!content) {
+            return res.json({ data: [] });
+        }
+
+        let likesMap: { [postId: string]: string[] } = {};
+        if (fs.existsSync(teamFeedLikesCsvPath)) {
+            const likesContent = fs.readFileSync(teamFeedLikesCsvPath, "utf8").trim();
+            if (likesContent) {
+                const likesLines = likesContent.split(/\r?\n/).slice(1);
+                for (const line of likesLines) {
+                    if (!line || !line.trim()) continue;
+                    const cols = line.split(",");
+                    const postId = cols[1];
+                    const likerEmail = cols[2];
+                    if (!likesMap[postId]) likesMap[postId] = [];
+                    likesMap[postId].push(likerEmail);
+                }
+            }
+        }
+
+        const lines: string[] = content.split(/\r?\n/);
+        const data: any[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line || !line.trim()) continue;
+
+            const cols = parseCSVLine(line);
+            const postId = cols[0] ?? "";
+            const postLikes = likesMap[postId] || [];
+
+            data.push({
+                postId,
+                authorName: cols[1] ?? "",
+                authorEmail: cols[2] ?? "",
+                authorRole: cols[3] ?? "staff",
+                content: cols[4] ?? "",
+                createdAt: cols[5] ?? "",
+                likes: postLikes.length,
+                likedByUser: userEmail ? postLikes.includes(String(userEmail)) : false
+            });
+        }
+
+        data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        return res.json({ data: data.slice(0, maxPosts) });
+    } catch (err) {
+        console.error("Error reading team feed CSV:", err);
+        return res.status(500).json({ error: "Failed to read team feed." });
+    }
+});
+
+app.post("/api/team-feed/:postId/like", (req: Request, res: Response) => {
+    const { postId } = req.params;
+    const { userEmail } = req.body || {};
+
+    if (!userEmail) {
+        return res.status(400).json({ error: "userEmail is required." });
+    }
+
+    try {
+        let likesContent = "";
+        if (fs.existsSync(teamFeedLikesCsvPath)) {
+            likesContent = fs.readFileSync(teamFeedLikesCsvPath, "utf8").trim();
+        }
+
+        const likesLines = likesContent ? likesContent.split(/\r?\n/) : [];
+        if (likesLines.length === 0) {
+            likesLines.push("LikeID,PostID,UserEmail,CreatedAt");
+        }
+
+        for (let i = 1; i < likesLines.length; i++) {
+            const line = likesLines[i];
+            if (!line || !line.trim()) continue;
+            const cols = line.split(",");
+            if (cols[1] === postId && cols[2] === userEmail) {
+                return res.json({ success: true, message: "Already liked." });
+            }
+        }
+
+        const numericId = getNextIdFromCsv(teamFeedLikesCsvPath);
+        const likeRow = `${numericId},${postId},${userEmail},${new Date().toISOString()}\n`;
+
+        fs.appendFileSync(teamFeedLikesCsvPath, likeRow, "utf8");
+
+        let totalLikes = 1;
+        for (let i = 1; i < likesLines.length; i++) {
+            const line = likesLines[i];
+            if (!line || !line.trim()) continue;
+            const cols = line.split(",");
+            if (cols[1] === postId) totalLikes++;
+        }
+
+        return res.json({ success: true, likes: totalLikes });
+    } catch (err) {
+        console.error("Error liking post:", err);
+        return res.status(500).json({ error: "Failed to like post." });
+    }
+});
+
+app.post("/api/team-feed/:postId/unlike", (req: Request, res: Response) => {
+    const { postId } = req.params;
+    const { userEmail } = req.body || {};
+
+    if (!userEmail) {
+        return res.status(400).json({ error: "userEmail is required." });
+    }
+
+    try {
+        if (!fs.existsSync(teamFeedLikesCsvPath)) {
+            return res.json({ success: true, likes: 0 });
+        }
+
+        const content = fs.readFileSync(teamFeedLikesCsvPath, "utf8").trim();
+        if (!content) {
+            return res.json({ success: true, likes: 0 });
+        }
+
+        const lines = content.split(/\r?\n/);
+        const header = lines[0];
+        const newRows: string[] = [];
+        let totalLikes = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line || !line.trim()) continue;
+            const cols = line.split(",");
+
+            if (cols[1] === postId && cols[2] === userEmail) {
+                continue;
+            }
+
+            newRows.push(line);
+
+            if (cols[1] === postId) totalLikes++;
+        }
+
+        const newContent = [header, ...newRows].filter(l => l && l.trim()).join("\n") + "\n";
+        fs.writeFileSync(teamFeedLikesCsvPath, newContent, "utf8");
+
+        return res.json({ success: true, likes: totalLikes });
+    } catch (err) {
+        console.error("Error unliking post:", err);
+        return res.status(500).json({ error: "Failed to unlike post." });
+    }
+});
+
+app.post("/api/team-feed/:postId/delete", (req: Request, res: Response) => {
+    const { postId } = req.params;
+    const { userEmail, userRole } = req.body || {};
+
+    if (!userEmail) {
+        return res.status(400).json({ error: "userEmail is required." });
+    }
+
+    try {
+        if (!fs.existsSync(teamFeedCsvPath)) {
+            return res.status(404).json({ error: "Team feed not found." });
+        }
+
+        const content = fs.readFileSync(teamFeedCsvPath, "utf8").trim();
+        if (!content) {
+            return res.status(404).json({ error: "No posts to delete." });
+        }
+
+        const lines = content.split(/\r?\n/);
+        const header = lines[0];
+        const newRows: string[] = [];
+        let deletedRow: string | null = null;
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line || !line.trim()) continue;
+
+            const cols = parseCSVLine(line);
+
+            if (cols[0] === postId) {
+                const authorEmail = cols[2];
+                if (authorEmail !== userEmail && userRole !== "admin") {
+                    return res.status(403).json({ error: "Not authorized to delete this post." });
+                }
+                deletedRow = line;
+                continue;
+            }
+
+            newRows.push(line);
+        }
+
+        if (!deletedRow) {
+            return res.status(404).json({ error: "Post not found." });
+        }
+
+        const newContent = [header, ...newRows].filter(l => l && l.trim()).join("\n") + "\n";
+        fs.writeFileSync(teamFeedCsvPath, newContent, "utf8");
+
+        if (fs.existsSync(teamFeedLikesCsvPath)) {
+            const likesContent = fs.readFileSync(teamFeedLikesCsvPath, "utf8").trim();
+            if (likesContent) {
+                const likesLines = likesContent.split(/\r?\n/);
+                const likesHeader = likesLines[0];
+                const newLikesRows: string[] = [];
+
+                for (let i = 1; i < likesLines.length; i++) {
+                    const line = likesLines[i];
+                    if (!line || !line.trim()) continue;
+                    const cols = line.split(",");
+                    if (cols[1] !== postId) {
+                        newLikesRows.push(line);
+                    }
+                }
+
+                const newLikesContent = [likesHeader, ...newLikesRows].filter(l => l && l.trim()).join("\n") + "\n";
+                fs.writeFileSync(teamFeedLikesCsvPath, newLikesContent, "utf8");
+            }
+        }
+
+        appendAuditLog(
+            "DELETE_POST",
+            "team_feed",
+            formatId("TF", Number(postId)),
+            userEmail,
+            `Team feed post deleted`
+        );
+
+        return res.json({ success: true });
+    } catch (err) {
+        console.error("Error deleting post:", err);
+        return res.status(500).json({ error: "Failed to delete post." });
+    }
+});
+
+
+// ==========================================================
+//  EMAIL API ENDPOINTS
+//  View/send emails (for admin/testing)
+// ==========================================================
+
+// Send an email manually
+app.post("/api/emails/send", async (req: Request, res: Response) => {
+    const { to, from, subject, body } = req.body || {};
+
+    if (!to || !subject) {
+        return res.status(400).json({ error: "to and subject are required." });
+    }
+
+    const result = await sendEmail({ to, from, subject, body: body || "" });
+
+    if (result.success) {
+        return res.json({ success: true, emailId: result.emailId });
+    } else {
+        return res.status(500).json({ error: result.error || "Failed to send email." });
+    }
+});
+
+// Get all sent emails (outbox)
+app.get("/api/emails/outbox", (req: Request, res: Response) => {
+    const { limit } = req.query;
+    const maxEmails = Number(limit) || 50;
+
+    try {
+        if (!fs.existsSync(emailsCsvPath)) {
+            return res.json({ data: [] });
+        }
+
+        const content = fs.readFileSync(emailsCsvPath, "utf8").trim();
+        if (!content) {
+            return res.json({ data: [] });
+        }
+
+        const lines = content.split(/\r?\n/);
+        const data: any[] = [];
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line || !line.trim()) continue;
+
+            const cols = parseCSVLine(line);
+
+            data.push({
+                emailId: cols[0] || "",
+                to: cols[1] || "",
+                from: cols[2] || "",
+                subject: cols[3] || "",
+                body: cols[4] || "",
+                status: cols[5] || "sent",
+                createdAt: cols[6] || "",
+                sentAt: cols[7] || ""
+            });
+        }
+
+        // Sort newest first
+        data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        return res.json({ data: data.slice(0, maxEmails) });
+    } catch (err) {
+        console.error("Error reading emails:", err);
+        return res.status(500).json({ error: "Failed to read emails." });
+    }
+});
+
+// Get a specific email by ID
+app.get("/api/emails/:emailId", (req: Request, res: Response) => {
+    const { emailId } = req.params;
+
+    try {
+        if (!fs.existsSync(emailsCsvPath)) {
+            return res.status(404).json({ error: "Email not found." });
+        }
+
+        const content = fs.readFileSync(emailsCsvPath, "utf8").trim();
+        if (!content) {
+            return res.status(404).json({ error: "Email not found." });
+        }
+
+        const lines = content.split(/\r?\n/);
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line || !line.trim()) continue;
+
+            const cols = parseCSVLine(line);
+
+            if (cols[0] === emailId || cols[0] === emailId.replace("EM-", "")) {
+                return res.json({
+                    data: {
+                        emailId: cols[0] || "",
+                        to: cols[1] || "",
+                        from: cols[2] || "",
+                        subject: cols[3] || "",
+                        body: cols[4] || "",
+                        status: cols[5] || "sent",
+                        createdAt: cols[6] || "",
+                        sentAt: cols[7] || ""
+                    }
+                });
+            }
+        }
+
+        return res.status(404).json({ error: "Email not found." });
+    } catch (err) {
+        console.error("Error reading email:", err);
+        return res.status(500).json({ error: "Failed to read email." });
     }
 });
 

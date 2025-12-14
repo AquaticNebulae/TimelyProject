@@ -49,3 +49,111 @@ LogID,Timestamp,ActionType,EntityType,EntityId,PerformedBy,Details
 48,2025-12-09T15:21:11.181Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
 49,2025-12-09T15:48:16.789Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
 50,2025-12-09T16:34:01.604Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+51,2025-12-10T19:12:16.261Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+52,2025-12-10T19:52:36.419Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+53,2025-12-11T01:38:25.406Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+54,2025-12-11T01:41:31.085Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+55,2025-12-11T13:47:06.288Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+56,2025-12-11T14:24:57.456Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+57,2025-12-11T14:25:24.485Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+58,2025-12-11T15:25:08.223Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+59,2025-12-11T15:25:24.990Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+60,2025-12-12T23:16:58.441Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+61,2025-12-12T23:20:10.838Z,CREATE_POST,team_feed,TF-0001,fryv@timely.com,Team feed post created by Admin Fryv
+62,2025-12-12T23:53:59.439Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+63,2025-12-12T23:54:22.551Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+64,2025-12-13T00:53:01.625Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+65,2025-12-13T01:07:47.556Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+66,2025-12-13T01:09:57.797Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+67,2025-12-13T01:50:47.600Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+68,2025-12-13T01:51:35.410Z,CREATE_PROJECT,project,P-0002,unknown_admin,Project created: Testing Client view
+69,2025-12-13T01:51:57.626Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+70,2025-12-13T04:29:55.512Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+71,2025-12-13T05:22:50.488Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+72,2025-12-13T05:29:02.182Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+73,2025-12-13T05:38:46.646Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+74,2025-12-13T05:39:44.639Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+75,2025-12-13T05:58:33.425Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+76,2025-12-13T05:58:37.740Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+77,2025-12-13T05:58:41.026Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+78,2025-12-13T05:59:24.522Z,CREATE_CLIENT,client,C-0012,fryv@timely.com,Client created: Samuel Jackson (jacksons@timely.com)
+79,2025-12-13T06:06:55.690Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+80,2025-12-13T06:07:13.448Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+81,2025-12-13T06:27:55.781Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+82,2025-12-13T06:34:22.689Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+83,2025-12-13T06:40:00.719Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+84,2025-12-13T06:40:25.629Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+85,2025-12-13T06:40:31.371Z,DELETE_HOURS_LOG,hours_log,HL-0001,admin,Hours log deleted: 8.27h on 2025-12-10
+86,2025-12-13T06:40:57.527Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+87,2025-12-13T06:41:12.957Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+88,2025-12-13T06:43:43.821Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+89,2025-12-13T06:48:44.906Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+90,2025-12-13T06:55:20.202Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+91,2025-12-13T06:55:29.772Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+92,2025-12-13T17:33:11.196Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+93,2025-12-13T17:33:39.328Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+94,2025-12-13T17:34:58.973Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+95,2025-12-13T17:38:35.463Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+96,2025-12-13T17:59:59.017Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+97,2025-12-13T18:51:40.446Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+98,2025-12-13T18:56:54.609Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+99,2025-12-13T19:01:07.593Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+100,2025-12-13T19:03:08.391Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+101,2025-12-13T19:03:30.522Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+102,2025-12-13T19:04:53.354Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+103,2025-12-13T19:04:59.358Z,CREATE_POST,team_feed,TF-0002,gonzalesp@timely.com,Team feed post created by Pedri Gonzales
+104,2025-12-13T19:05:07.654Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+105,2025-12-13T19:09:56.646Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+106,2025-12-13T19:10:18.306Z,ASSIGN_CONSULTANT,client_consultant,C2-CO2,admin,Consultant 2 assigned to client 2
+107,2025-12-13T19:10:19.657Z,ASSIGN_CONSULTANT,client_consultant,C2-CO1,admin,Consultant 1 assigned to client 2
+108,2025-12-13T19:10:37.169Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+109,2025-12-13T19:11:43.178Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+110,2025-12-13T19:14:35.934Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+111,2025-12-13T19:14:55.833Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+112,2025-12-13T19:15:06.783Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+113,2025-12-13T19:24:04.393Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+114,2025-12-13T19:27:45.440Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+115,2025-12-13T19:27:54.416Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+116,2025-12-13T19:38:01.278Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+117,2025-12-13T19:41:44.343Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+118,2025-12-13T19:45:27.480Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+119,2025-12-13T19:45:34.025Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+120,2025-12-13T19:47:43.508Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+121,2025-12-13T19:48:52.094Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+122,2025-12-13T19:49:22.477Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+123,2025-12-13T19:49:53.859Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+124,2025-12-13T19:56:55.659Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+125,2025-12-13T19:58:28.063Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+126,2025-12-13T19:59:33.041Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+127,2025-12-13T19:59:59.177Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+128,2025-12-13T20:00:34.024Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+129,2025-12-13T20:03:15.753Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+130,2025-12-13T20:04:04.741Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+131,2025-12-13T20:04:29.138Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+132,2025-12-13T20:05:24.400Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+133,2025-12-13T20:05:41.144Z,LOG_HOURS,hours_log,HL-0001,consultant,Hours logged: 2.05h for consultant 2 on project 2
+134,2025-12-13T20:05:52.489Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+135,2025-12-13T20:11:51.680Z,CREATE_PROJECT,project,P-0003,unknown_admin,Project created: Cross PLay
+136,2025-12-13T20:47:19.518Z,CREATE_PROJECT,project,P-0004,unknown_admin,Project created: HP
+137,2025-12-13T20:54:32.398Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+138,2025-12-13T20:55:09.476Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+139,2025-12-13T20:55:20.113Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+140,2025-12-13T21:04:18.683Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+141,2025-12-13T21:04:26.528Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+142,2025-12-13T22:20:55.525Z,CREATE_PROJECT,project,P-0005,unknown_admin,Project created: GG
+143,2025-12-13T22:23:15.696Z,CREATE_PROJECT,project,P-0006,unknown_admin,Project created: Crossing Testing 1
+144,2025-12-13T22:39:37.062Z,CREATE_PROJECT,project,P-0007,unknown_admin,Project created: TEST 123
+145,2025-12-13T22:43:47.019Z,CREATE_PROJECT,project,P-0008,unknown_admin,Project created: Another one
+146,2025-12-13T22:50:36.567Z,CREATE_PROJECT,project,P-0009,unknown_admin,Project created: Pls work
+147,2025-12-13T22:57:01.226Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+148,2025-12-13T22:58:27.679Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+149,2025-12-13T23:02:04.486Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+150,2025-12-13T23:06:12.853Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+151,2025-12-13T23:06:52.869Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+152,2025-12-13T23:11:57.467Z,LOGIN,admin,admin-1,fryv@timely.com,Admin logged in: Admin Fryv
+153,2025-12-13T23:12:02.006Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+154,2025-12-13T23:25:35.217Z,CREATE_COMMENT,comment,CM-0002,mardij@timely.com,Comment added to project 2
+155,2025-12-14T00:13:13.338Z,LOGIN,consultant,CO-0002,gonzalesp@timely.com,Consultant logged in: Pedri Gonzales
+156,2025-12-14T00:13:22.936Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+157,2025-12-14T00:13:38.828Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi
+158,2025-12-14T00:16:12.593Z,LOGIN,client,C-0002,mardij@timely.com,Client logged in: james mardi

@@ -1,1041 +1,1405 @@
 // src/Tabs/admin.tsx
-import React, { useEffect, useState } from "react";
-import EmailGenerator from "../Views_Layouts/EmailGenerator";
+// admin dashboard - central hub for system administration
+// provides management for clients, consultants, projects, time logs, emails, alerts, documents, and messages
+// only accessible by users with admin role
 
+import React, { useEffect, useState, useMemo } from "react";
+import {
+    Users, Briefcase, FolderOpen, Mail, Shield, Clock, AlertTriangle,
+    RefreshCw, Search, Key, UserCheck, BarChart3, PieChart,
+    Send, Check, X, Download, Megaphone, Ban, CheckCircle, XCircle,
+    Plus, Edit2, Trash2, Timer, FileText, MessageCircle
+} from "lucide-react";
+import { useTheme } from "../Views_Layouts/ThemeContext";
+import AdminDocumentRequests from "./AdminDocumentRequests";
+import AdminMessages from "./AdminMessages";
+
+// TASK: move to environment config
 const API_BASE = "http://localhost:4000";
 
-// ---- Types ----
-type UserRow = {
-  customerId: string;
-  clientCode: string;
-  firstName: string;
-  middleName: string;
-  lastName: string;
-  email: string;
-  tempPassword: string;
+const TOAST_DURATION_MS = 3000;
+
+type UserRole = "admin" | "consultant" | "client";
+type UserStatus = "active" | "inactive" | "suspended";
+type ApprovalStatus = "pending" | "approved" | "denied";
+type AlertType = "warning" | "error" | "info";
+type AdminView = "dashboard" | "users" | "consultants" | "projects" | "timelogs" | "emails" | "alerts" | "documents" | "messages";
+
+interface User {
+    customerId: string;
+    clientCode: string;
+    firstName: string;
+    middleName: string;
+    lastName: string;
+    email: string;
+    tempPassword: string;
+    status?: UserStatus;
+    role?: string;
+}
+
+interface Consultant {
+    consultantId: string;
+    consultantCode: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    role: string;
+    status?: UserStatus;
+}
+
+interface Project {
+    projectId: string;
+    projectCode: string;
+    projectName: string;
+    clientName: string;
+    status: string;
+}
+
+interface HoursLog {
+    logId: string;
+    projectId: string;
+    consultantId: string;
+    date: string;
+    hours: number;
+    description: string;
+    createdAt: string;
+    approvalStatus?: ApprovalStatus;
+}
+
+interface Email {
+    emailId: string;
+    to: string;
+    from: string;
+    subject: string;
+    body: string;
+    status: string;
+    createdAt: string;
+}
+
+interface Alert {
+    id: string;
+    type: AlertType;
+    message: string;
+    timestamp: string;
+    expiresAt?: string;
+    isCustom?: boolean;
+}
+
+interface AdminTabProps {
+    onNavigate?: (page: string) => void;
+}
+
+// generates a random password with mixed characters for security
+const generateRandomPassword = (): string => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@$%";
+    let password = "";
+    for (let i = 0; i < 12; i++) {
+        password += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return password;
 };
 
-type ProjectRow = {
-  projectId: string;
-  projectCode: string;
-  projectName: string;
-  clientName: string;
-  status: string;
+// formats iso date string to readable locale format
+const formatDate = (iso: string): string => {
+    if (!iso) return "";
+    return new Date(iso).toLocaleString();
 };
 
-type ConsultantRow = {
-  consultantId: string;
-  consultantCode: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  role: string;
+// exports data array to csv file for download
+const exportToCSV = (data: any[], filename: string, onSuccess: (msg: string) => void, onError: (msg: string) => void) => {
+    if (data.length === 0) {
+        onError("No data to export");
+        return;
+    }
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+        headers.join(","),
+        ...data.map(row => headers.map(h => {
+            const val = row[h] ?? "";
+            return typeof val === "string" && (val.includes(",") || val.includes('"'))
+                ? `"${val.replace(/"/g, '""')}"`
+                : val;
+        }).join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filename}_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onSuccess(`Exported ${data.length} records`);
 };
 
-type AuditLogItem = {
-  logId: string;
-  timestamp: string;
-  actionType: string;
-  entityType: string;
-  entityId: string;
-  performedBy: string;
-  details: string;
-};
-
-type AdminSection = "home" | "projects" | "clients" | "consultants" | "settings";
-type ClientViewMode = "add" | "select";
-
-const AdminTab: React.FC = () => {
-  const [section, setSection] = useState<AdminSection>("home");
-  const [clientView, setClientView] = useState<ClientViewMode>("add");
-
-  const [adminEmail, setAdminEmail] = useState<string>("admin@timely.com");
-
-  // Clients/users
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [userLoading, setUserLoading] = useState(false);
-  const [userError, setUserError] = useState<string | null>(null);
-  const [userActionMessage, setUserActionMessage] = useState<string | null>(
-    null
-  );
-
-  // Projects
-  const [projects, setProjects] = useState<ProjectRow[]>([]);
-  const [projectsLoading, setProjectsLoading] = useState(false);
-  const [projectsError, setProjectsError] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState("");
-  const [projectClientName, setProjectClientName] = useState("");
-  const [projectStatus, setProjectStatus] = useState("");
-
-  // Consultants
-  const [consultants, setConsultants] = useState<ConsultantRow[]>([]);
-  const [consultantsLoading, setConsultantsLoading] = useState(false);
-  const [consultantsError, setConsultantsError] = useState<string | null>(null);
-  const [consFirstName, setConsFirstName] = useState("");
-  const [consLastName, setConsLastName] = useState("");
-  const [consEmail, setConsEmail] = useState("");
-  const [consRole, setConsRole] = useState("");
-
-  // Audit / notifications
-  const [notifications, setNotifications] = useState<AuditLogItem[]>([]);
-  const [notifError, setNotifError] = useState<string | null>(null);
-
-  // Assignment UI
-  const [assignClientIdForConsultant, setAssignClientIdForConsultant] =
-    useState<string>("");
-  const [assignConsultantId, setAssignConsultantId] = useState<string>("");
-
-  const [assignClientIdForProject, setAssignClientIdForProject] =
-    useState<string>("");
-  const [assignProjectId, setAssignProjectId] = useState<string>("");
-  const [assignProjectConsultantId, setAssignProjectConsultantId] =
-    useState<string>("");
-
-  // ---- Fetch helpers ----
-
-  const fetchUsers = async () => {
+// helper to get pending document requests count
+const getPendingDocumentRequestsCount = (): number => {
     try {
-      setUserLoading(true);
-      setUserError(null);
-      const res = await fetch(`${API_BASE}/api/users-report`);
-      if (!res.ok) throw new Error("Failed to fetch users");
-      const json = await res.json();
-      setUsers(json.data || []);
-    } catch (err: any) {
-      setUserError(err.message || "Error fetching users");
-    } finally {
-      setUserLoading(false);
-    }
-  };
-
-  const fetchProjects = async () => {
-    try {
-      setProjectsLoading(true);
-      setProjectsError(null);
-      const res = await fetch(`${API_BASE}/api/projects`);
-      if (!res.ok) throw new Error("Failed to fetch projects");
-      const json = await res.json();
-      setProjects(json.data || []);
-    } catch (err: any) {
-      setProjectsError(err.message || "Error fetching projects");
-    } finally {
-      setProjectsLoading(false);
-    }
-  };
-
-  const fetchConsultants = async () => {
-    try {
-      setConsultantsLoading(true);
-      setConsultantsError(null);
-      const res = await fetch(`${API_BASE}/api/consultants`);
-      if (!res.ok) throw new Error("Failed to fetch consultants");
-      const json = await res.json();
-      setConsultants(json.data || []);
-    } catch (err: any) {
-      setConsultantsError(err.message || "Error fetching consultants");
-    } finally {
-      setConsultantsLoading(false);
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      setNotifError(null);
-      const res = await fetch(`${API_BASE}/api/audit-logs/latest?limit=10`);
-      if (!res.ok) throw new Error("Failed to fetch notifications");
-      const json = await res.json();
-      setNotifications(json.data || []);
-    } catch (err: any) {
-      setNotifError(err.message || "Error fetching notifications");
-    }
-  };
-
-  // ---- Initial load ----
-  useEffect(() => {
-    // admin email from login
-    try {
-      const stored = localStorage.getItem("timely_user");
-      if (stored) {
-        const u = JSON.parse(stored);
-        if (u?.email) setAdminEmail(u.email);
-      }
+        const requests = JSON.parse(localStorage.getItem("timely_document_requests") || "[]");
+        return requests.filter((r: any) => r.status === "uploaded").length;
     } catch {
-      // ignore
+        return 0;
     }
+};
 
-    fetchUsers();
-    fetchProjects();
-    fetchConsultants();
-    fetchNotifications();
-  }, []);
-
-  // ---- Client actions ----
-
-  const handleDeleteUser = async (customerId: string) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to remove user with ID ${customerId}?`
-    );
-    if (!confirmDelete) return;
-
+// helper to get unread messages count
+const getUnreadMessagesCount = (): number => {
     try {
-      setUserActionMessage(null);
-      setUserError(null);
-
-      const res = await fetch(`${API_BASE}/api/users-delete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId, performedBy: adminEmail }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to delete user.");
-      }
-
-      setUserActionMessage(`User ${customerId} removed successfully.`);
-      setUsers((prev) =>
-        prev.filter((u) => u.customerId !== String(customerId))
-      );
-      fetchNotifications();
-    } catch (err: any) {
-      setUserError(err.message || "Error deleting user.");
+        const messages = JSON.parse(localStorage.getItem("timely_global_messages") || "[]");
+        return messages.filter((m: any) => !m.read && m.from?.role === "client").length;
+    } catch {
+        return 0;
     }
-  };
+};
 
-  // ---- Project actions ----
 
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!projectName.trim()) {
-      alert("Project name is required.");
-      return;
-    }
+const AdminTab: React.FC<AdminTabProps> = ({ onNavigate }) => {
+    const { isDark } = useTheme();
 
-    try {
-      setProjectsError(null);
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectName: projectName.trim(),
-          clientName: projectClientName.trim(),
-          status: projectStatus.trim(),
-          performedBy: adminEmail,
-        }),
-      });
+    // centralized style definitions for consistent theming
+    const styles = {
+        card: isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200",
+        cardInner: isDark ? "bg-slate-900" : "bg-gray-50",
+        text: isDark ? "text-white" : "text-gray-900",
+        textMuted: isDark ? "text-slate-400" : "text-gray-500",
+        input: isDark ? "bg-slate-900 border-slate-700 text-white" : "bg-white border-gray-300 text-gray-900",
+        hover: isDark ? "hover:bg-slate-700" : "hover:bg-gray-100",
+        selected: isDark ? "bg-slate-700" : "bg-blue-50",
+        divider: isDark ? "divide-slate-700" : "divide-gray-200",
+        border: isDark ? "border-slate-700" : "border-gray-200",
+    };
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to create project.");
-      }
+    // navigation and user state
+    const [currentView, setCurrentView] = useState<AdminView>("dashboard");
+    const [adminEmail, setAdminEmail] = useState("admin@timely.com");
+    const [adminName, setAdminName] = useState("Admin");
 
-      setProjectName("");
-      setProjectClientName("");
-      setProjectStatus("");
-      await fetchProjects();
-      fetchNotifications();
-    } catch (err: any) {
-      setProjectsError(err.message || "Error creating project.");
-    }
-  };
+    // data state - fetched from api
+    const [users, setUsers] = useState<User[]>([]);
+    const [consultants, setConsultants] = useState<Consultant[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [hoursLogs, setHoursLogs] = useState<HoursLog[]>([]);
+    const [emails, setEmails] = useState<Email[]>([]);
+    const [alerts, setAlerts] = useState<Alert[]>([]);
+    const [pendingDocRequests, setPendingDocRequests] = useState(0);
+    const [unreadMessages, setUnreadMessages] = useState(0);
 
-  const handleDeleteProject = async (projectId: string) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to remove project ID ${projectId}?`
-    );
-    if (!confirmDelete) return;
+    // ui state
+    const [isLoading, setIsLoading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const [userStatusFilter, setUserStatusFilter] = useState<"all" | UserStatus>("all");
+    const [timelogStatusFilter, setTimelogStatusFilter] = useState<"all" | ApprovalStatus>("all");
 
-    try {
-      setProjectsError(null);
-      const res = await fetch(`${API_BASE}/api/projects-delete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, performedBy: adminEmail }),
-      });
+    // selection state for detail panels
+    const [selectedUser, setSelectedUser] = useState<User | null>(null);
+    const [selectedConsultant, setSelectedConsultant] = useState<Consultant | null>(null);
+    const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+    const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to delete project.");
-      }
+    // modal visibility state
+    const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+    const [showChangeRoleModal, setShowChangeRoleModal] = useState(false);
+    const [showComposeEmailModal, setShowComposeEmailModal] = useState(false);
+    const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+    const [showAlertModal, setShowAlertModal] = useState(false);
+    const [editingAlert, setEditingAlert] = useState<Alert | null>(null);
 
-      setProjects((prev) =>
-        prev.filter((p) => p.projectId !== String(projectId))
-      );
-      fetchNotifications();
-    } catch (err: any) {
-      setProjectsError(err.message || "Error deleting project.");
-    }
-  };
+    // form state for modals
+    const [newPassword, setNewPassword] = useState("");
+    const [newRole, setNewRole] = useState("");
+    const [composeTo, setComposeTo] = useState("");
+    const [composeSubject, setComposeSubject] = useState("");
+    const [composeBody, setComposeBody] = useState("");
+    const [emailSuggestions, setEmailSuggestions] = useState<{ name: string; email: string }[]>([]);
+    const [showEmailSuggestions, setShowEmailSuggestions] = useState(false);
+    const [announcementSubject, setAnnouncementSubject] = useState("");
+    const [announcementBody, setAnnouncementBody] = useState("");
+    const [announcementTarget, setAnnouncementTarget] = useState<"all" | "clients" | "consultants">("all");
+    const [newAlertMessage, setNewAlertMessage] = useState("");
+    const [newAlertType, setNewAlertType] = useState<AlertType>("info");
+    const [newAlertExpiry, setNewAlertExpiry] = useState("");
 
-  const handleAssignProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignClientIdForProject || !assignProjectId) {
-      alert("Select a client and a project.");
-      return;
-    }
+    // toast notification state
+    const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-    try {
-      const payload: any = {
-        clientId: assignClientIdForProject,
-        projectId: assignProjectId,
-        performedBy: adminEmail,
-      };
+    const showToast = (message: string, type: "success" | "error" = "success") => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), TOAST_DURATION_MS);
+    };
 
-      if (assignProjectConsultantId) {
-        payload.consultantIds = [assignProjectConsultantId];
-      }
-
-      const res = await fetch(`${API_BASE}/api/projects/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to assign project.");
-      }
-
-      window.alert("Project assigned successfully.");
-      fetchNotifications();
-    } catch (err: any) {
-      window.alert(err.message || "Error assigning project.");
-    }
-  };
-
-  // ---- Consultant actions ----
-
-  const handleCreateConsultant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!consFirstName.trim() || !consLastName.trim() || !consEmail.trim()) {
-      alert("First name, last name, and email are required.");
-      return;
-    }
-
-    try {
-      setConsultantsError(null);
-      const res = await fetch(`${API_BASE}/api/consultants`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: consFirstName.trim(),
-          lastName: consLastName.trim(),
-          email: consEmail.trim(),
-          role: consRole.trim(),
-          performedBy: adminEmail,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to create consultant.");
-      }
-
-      setConsFirstName("");
-      setConsLastName("");
-      setConsEmail("");
-      setConsRole("");
-      await fetchConsultants();
-      fetchNotifications();
-    } catch (err: any) {
-      setConsultantsError(err.message || "Error creating consultant.");
-    }
-  };
-
-  const handleDeleteConsultant = async (consultantId: string) => {
-    const confirmDelete = window.confirm(
-      `Are you sure you want to remove consultant ID ${consultantId}?`
-    );
-    if (!confirmDelete) return;
-
-    try {
-      setConsultantsError(null);
-      const res = await fetch(`${API_BASE}/api/consultants-delete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ consultantId, performedBy: adminEmail }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to delete consultant.");
-      }
-
-      setConsultants((prev) =>
-        prev.filter((c) => c.consultantId !== String(consultantId))
-      );
-      fetchNotifications();
-    } catch (err: any) {
-      setConsultantsError(err.message || "Error deleting consultant.");
-    }
-  };
-
-  const handleAssignConsultant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignClientIdForConsultant || !assignConsultantId) {
-      alert("Select a client and a consultant.");
-      return;
-    }
-
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/client-consultants/assign`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            clientId: assignClientIdForConsultant,
-            consultantId: assignConsultantId,
-            performedBy: adminEmail,
-          }),
+    // api fetch functions
+    const fetchUsers = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/users-report`);
+            if (res.ok) {
+                const json = await res.json();
+                const usersWithDefaults = (json.data || []).map((u: User) => ({
+                    ...u,
+                    status: u.status || "active",
+                    role: u.role || "client"
+                }));
+                setUsers(usersWithDefaults);
+            }
+        } catch (err) {
+            console.error("Error fetching users:", err);
         }
-      );
+    };
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to assign consultant.");
-      }
+    const fetchConsultants = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/consultants`);
+            if (res.ok) {
+                const json = await res.json();
+                const consultantsWithDefaults = (json.data || []).map((c: Consultant) => ({
+                    ...c,
+                    status: c.status || "active"
+                }));
+                setConsultants(consultantsWithDefaults);
+            }
+        } catch (err) {
+            console.error("Error fetching consultants:", err);
+        }
+    };
 
-      window.alert(data.message || "Consultant assigned successfully.");
-      fetchNotifications();
-    } catch (err: any) {
-      window.alert(err.message || "Error assigning consultant.");
-    }
-  };
+    const fetchProjects = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/projects`);
+            if (res.ok) {
+                const json = await res.json();
+                setProjects(json.data || []);
+            }
+        } catch (err) {
+            console.error("Error fetching projects:", err);
+        }
+    };
 
-  // ---- Render sections ----
+    const fetchHoursLogs = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/hours-logs`);
+            if (res.ok) {
+                const json = await res.json();
+                setHoursLogs(json.data || []);
+            }
+        } catch (err) {
+            console.error("Error fetching hours:", err);
+        }
+    };
 
-  const renderHome = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Admin Home</h1>
-          <p className="text-sm text-slate-300">
-            Overview of clients, projects and consultants. Use quick actions to
-            add new records.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => setSection("clients")}
-          >
-            + New Client
-          </button>
-          <button
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => setSection("consultants")}
-          >
-            + New Consultant
-          </button>
-          <button
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => setSection("projects")}
-          >
-            + New Project
-          </button>
-        </div>
-      </div>
+    const fetchEmails = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/emails/outbox?limit=100`);
+            if (res.ok) {
+                const json = await res.json();
+                setEmails(json.data || []);
+            }
+        } catch (err) {
+            console.error("Error fetching emails:", err);
+        }
+    };
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-gray-800 rounded-xl p-4">
-          <p className="text-xs text-slate-400 mb-1">Total Clients</p>
-          <p className="text-2xl font-bold">{users.length}</p>
-        </div>
-        <div className="bg-gray-800 rounded-xl p-4">
-          <p className="text-xs text-slate-400 mb-1">Projects</p>
-          <p className="text-2xl font-bold">{projects.length}</p>
-        </div>
-        <div className="bg-gray-800 rounded-xl p-4">
-          <p className="text-xs text-slate-400 mb-1">Consultants</p>
-          <p className="text-2xl font-bold">{consultants.length}</p>
-        </div>
-      </div>
+    const generateSystemAlerts = () => {
+        const systemAlerts: Alert[] = [];
+        const suspendedCount = users.filter(u => u.status === "suspended").length;
+        const pendingLogsCount = hoursLogs.filter(l => l.approvalStatus === "pending").length;
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
-        <div className="lg:col-span-2" />
-        <div className="bg-gray-800 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold">Notifications / Activity</h2>
-            <button
-              onClick={fetchNotifications}
-              className="text-[11px] text-blue-400 hover:underline"
-            >
-              Refresh
-            </button>
-          </div>
-          {notifError && (
-            <p className="text-xs text-red-400 mb-1">{notifError}</p>
-          )}
-          {notifications.length === 0 && !notifError && (
-            <p className="text-xs text-slate-400">
-              No recent activity yet. Actions such as creating clients or
-              assigning projects will appear here.
-            </p>
-          )}
-          <ul className="space-y-1 max-h-64 overflow-y-auto text-xs">
-            {notifications
-              .slice()
-              .reverse()
-              .map((n) => (
-                <li
-                  key={n.logId}
-                  className="border-b border-gray-700 pb-1 mb-1"
-                >
-                  <div className="text-slate-200">{n.details}</div>
-                  <div className="text-[10px] text-slate-400">
-                    {n.actionType} · {n.entityId} · {n.performedBy}
-                  </div>
-                </li>
-              ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
+        if (suspendedCount > 0) {
+            systemAlerts.push({
+                id: "sys-suspended",
+                type: "warning",
+                message: `${suspendedCount} user(s) currently suspended`,
+                timestamp: new Date().toISOString()
+            });
+        }
+        if (pendingLogsCount > 0) {
+            systemAlerts.push({
+                id: "sys-pending",
+                type: "warning",
+                message: `${pendingLogsCount} time log(s) pending approval`,
+                timestamp: new Date().toISOString()
+            });
+        }
 
-  const renderClients = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-2xl font-semibold">Clients</h1>
-          <p className="text-sm text-slate-300">
-            Add new clients or manage existing ones and assignments.
-          </p>
-        </div>
-        <div className="inline-flex rounded-lg overflow-hidden border border-gray-700">
-          <button
-            className={`px-3 py-1.5 text-xs font-semibold ${
-              clientView === "add"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-800 text-slate-300"
-            }`}
-            onClick={() => setClientView("add")}
-          >
-            Add Client
-          </button>
-          <button
-            className={`px-3 py-1.5 text-xs font-semibold ${
-              clientView === "select"
-                ? "bg-blue-600 text-white"
-                : "bg-gray-800 text-slate-300"
-            }`}
-            onClick={() => setClientView("select")}
-          >
-            Manage Clients
-          </button>
-        </div>
-      </div>
+        const customAlerts = alerts.filter(a => a.isCustom);
+        const validCustomAlerts = customAlerts.filter(a => !a.expiresAt || new Date(a.expiresAt) > new Date());
 
-      {clientView === "add" && (
-        <div className="-mx-4">
-          {/* Email + temp password + CSV save */}
-          <EmailGenerator />
-        </div>
-      )}
+        setAlerts([...systemAlerts, ...validCustomAlerts]);
+    };
 
-      {clientView === "select" && (
-        <div className="mt-4 space-y-6">
-          {/* Client list */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold">Current Clients</h2>
-              <button
-                onClick={fetchUsers}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                Refresh
-              </button>
+    const refreshAllData = async () => {
+        setIsLoading(true);
+        await Promise.all([fetchUsers(), fetchConsultants(), fetchProjects(), fetchHoursLogs(), fetchEmails()]);
+        setPendingDocRequests(getPendingDocumentRequestsCount());
+        setUnreadMessages(getUnreadMessagesCount());
+        setIsLoading(false);
+    };
+
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem("timely_user");
+            if (stored) {
+                const user = JSON.parse(stored);
+                if (user?.email) setAdminEmail(user.email);
+                if (user?.firstName) setAdminName(`${user.firstName} ${user.lastName || ""}`);
+            }
+            const savedAlerts = localStorage.getItem("timely_custom_alerts");
+            if (savedAlerts) {
+                const parsed = JSON.parse(savedAlerts);
+                setAlerts(parsed.filter((a: Alert) => a.isCustom));
+            }
+        } catch { }
+        refreshAllData();
+    }, []);
+
+    useEffect(() => {
+        generateSystemAlerts();
+    }, [users, projects, hoursLogs]);
+
+    useEffect(() => {
+        const customAlerts = alerts.filter(a => a.isCustom);
+        localStorage.setItem("timely_custom_alerts", JSON.stringify(customAlerts));
+    }, [alerts]);
+
+    useEffect(() => {
+        if (currentView === "documents") {
+            setPendingDocRequests(getPendingDocumentRequestsCount());
+        }
+        if (currentView === "messages") {
+            setUnreadMessages(getUnreadMessagesCount());
+        }
+    }, [currentView]);
+
+    const stats = useMemo(() => {
+        const activeUsers = users.filter(u => u.status === "active").length;
+        const inactiveUsers = users.filter(u => u.status === "inactive").length;
+        const suspendedUsers = users.filter(u => u.status === "suspended").length;
+        const totalHours = hoursLogs.reduce((sum, l) => sum + (Number(l.hours) || 0), 0);
+        const pendingLogs = hoursLogs.filter(l => l.approvalStatus === "pending").length;
+        const approvedLogs = hoursLogs.filter(l => l.approvalStatus === "approved").length;
+        const deniedLogs = hoursLogs.filter(l => l.approvalStatus === "denied").length;
+
+        return { activeUsers, inactiveUsers, suspendedUsers, totalHours, pendingLogs, approvedLogs, deniedLogs };
+    }, [users, hoursLogs]);
+
+    const filteredUsers = useMemo(() => {
+        return users.filter(u => {
+            const matchesSearch = `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesFilter = userStatusFilter === "all" || u.status === userStatusFilter;
+            return matchesSearch && matchesFilter;
+        });
+    }, [users, searchTerm, userStatusFilter]);
+
+    const filteredTimeLogs = useMemo(() => {
+        return hoursLogs.filter(l => timelogStatusFilter === "all" || l.approvalStatus === timelogStatusFilter);
+    }, [hoursLogs, timelogStatusFilter]);
+
+    const getConsultantName = (consultantId: string): string => {
+        const consultant = consultants.find(c => c.consultantId === consultantId);
+        return consultant ? `${consultant.firstName} ${consultant.lastName}` : `#${consultantId}`;
+    };
+
+    const getProjectName = (projectId: string): string => {
+        const project = projects.find(p => p.projectId === projectId);
+        return project ? project.projectName : `#${projectId}`;
+    };
+
+    const getConsultantHours = (consultantId: string): number => {
+        return hoursLogs
+            .filter(l => l.consultantId === consultantId)
+            .reduce((sum, l) => sum + (Number(l.hours) || 0), 0);
+    };
+
+    const getProjectHours = (projectId: string): number => {
+        return hoursLogs
+            .filter(l => l.projectId === projectId)
+            .reduce((sum, l) => sum + (Number(l.hours) || 0), 0);
+    };
+
+    const handleEmailInput = (value: string) => {
+        setComposeTo(value);
+        if (value.length >= 2) {
+            const allPeople = [
+                ...users.map(u => ({ name: `${u.firstName} ${u.lastName}`, email: u.email })),
+                ...consultants.map(c => ({ name: `${c.firstName} ${c.lastName}`, email: c.email }))
+            ];
+            const matches = allPeople.filter(p =>
+                p.name.toLowerCase().includes(value.toLowerCase()) ||
+                p.email.toLowerCase().includes(value.toLowerCase())
+            );
+            setEmailSuggestions(matches.slice(0, 5));
+            setShowEmailSuggestions(matches.length > 0);
+        } else {
+            setShowEmailSuggestions(false);
+        }
+    };
+
+    const handleResetPassword = async () => {
+        if (!selectedUser || !newPassword) return;
+        showToast(`Password reset for ${selectedUser.email}`, "success");
+        setShowResetPasswordModal(false);
+        setNewPassword("");
+        setSelectedUser(null);
+    };
+
+    const handleChangeRole = async () => {
+        if (!selectedUser || !newRole) return;
+        setUsers(prev => prev.map(u =>
+            u.customerId === selectedUser.customerId ? { ...u, role: newRole } : u
+        ));
+        showToast(`Role updated to ${newRole}`, "success");
+        setShowChangeRoleModal(false);
+        setNewRole("");
+        setSelectedUser(null);
+    };
+
+    const handleToggleUserSuspension = (user: User) => {
+        const newStatus: UserStatus = user.status === "suspended" ? "active" : "suspended";
+        setUsers(prev => prev.map(u =>
+            u.customerId === user.customerId ? { ...u, status: newStatus } : u
+        ));
+        showToast(`${user.firstName} ${user.lastName} ${newStatus === "suspended" ? "suspended" : "unsuspended"}`, "success");
+    };
+
+    const handleToggleConsultantSuspension = (consultant: Consultant) => {
+        const newStatus: UserStatus = consultant.status === "suspended" ? "active" : "suspended";
+        setConsultants(prev => prev.map(c =>
+            c.consultantId === consultant.consultantId ? { ...c, status: newStatus } : c
+        ));
+        showToast(`${consultant.firstName} ${consultant.lastName} ${newStatus === "suspended" ? "suspended" : "unsuspended"}`, "success");
+    };
+
+    const handleApproveTimeLog = (logId: string) => {
+        setHoursLogs(prev => prev.map(l =>
+            l.logId === logId ? { ...l, approvalStatus: "approved" as const } : l
+        ));
+        showToast("Time log approved", "success");
+    };
+
+    const handleDenyTimeLog = (logId: string) => {
+        setHoursLogs(prev => prev.map(l =>
+            l.logId === logId ? { ...l, approvalStatus: "denied" as const } : l
+        ));
+        showToast("Time log denied", "success");
+    };
+
+    const handleSendEmail = async () => {
+        if (!composeTo || !composeSubject) {
+            showToast("To and Subject are required", "error");
+            return;
+        }
+        try {
+            const res = await fetch(`${API_BASE}/api/emails/send`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    to: composeTo,
+                    from: "noreply@timely.com",
+                    subject: composeSubject,
+                    body: composeBody
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast("Email sent successfully", "success");
+                setShowComposeEmailModal(false);
+                setComposeTo("");
+                setComposeSubject("");
+                setComposeBody("");
+                setTimeout(() => fetchEmails(), 500);
+            } else {
+                throw new Error(data.error || "Failed to send");
+            }
+        } catch (err: any) {
+            showToast(err.message || "Failed to send email", "error");
+        }
+    };
+
+    const handleSendAnnouncement = async () => {
+        if (!announcementSubject || !announcementBody) {
+            showToast("Subject and body required", "error");
+            return;
+        }
+
+        let recipients: string[] = [];
+        if (announcementTarget === "all" || announcementTarget === "clients") {
+            recipients = [...recipients, ...users.map(u => u.email)];
+        }
+        if (announcementTarget === "all" || announcementTarget === "consultants") {
+            recipients = [...recipients, ...consultants.map(c => c.email)];
+        }
+
+        let sentCount = 0;
+        for (const email of recipients) {
+            try {
+                const res = await fetch(`${API_BASE}/api/emails/send`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        to: email,
+                        from: "noreply@timely.com",
+                        subject: `[Announcement] ${announcementSubject}`,
+                        body: announcementBody
+                    })
+                });
+                if (res.ok) sentCount++;
+            } catch { }
+        }
+
+        showToast(`Announcement sent to ${sentCount} recipient(s)`, "success");
+        setShowAnnouncementModal(false);
+        setAnnouncementSubject("");
+        setAnnouncementBody("");
+        setTimeout(() => fetchEmails(), 500);
+    };
+
+    const handleCreateAlert = () => {
+        if (!newAlertMessage) {
+            showToast("Alert message required", "error");
+            return;
+        }
+        const newAlert: Alert = {
+            id: `custom-${Date.now()}`,
+            type: newAlertType,
+            message: newAlertMessage,
+            timestamp: new Date().toISOString(),
+            expiresAt: newAlertExpiry || undefined,
+            isCustom: true
+        };
+        setAlerts(prev => [...prev, newAlert]);
+        resetAlertForm();
+        showToast("Alert created", "success");
+    };
+
+    const handleUpdateAlert = () => {
+        if (!editingAlert || !newAlertMessage) return;
+        setAlerts(prev => prev.map(a =>
+            a.id === editingAlert.id
+                ? { ...a, message: newAlertMessage, type: newAlertType, expiresAt: newAlertExpiry || undefined }
+                : a
+        ));
+        setEditingAlert(null);
+        resetAlertForm();
+        showToast("Alert updated", "success");
+    };
+
+    const handleDeleteAlert = (alertId: string) => {
+        setAlerts(prev => prev.filter(a => a.id !== alertId));
+        showToast("Alert deleted", "success");
+    };
+
+    const resetAlertForm = () => {
+        setNewAlertMessage("");
+        setNewAlertExpiry("");
+        setShowAlertModal(false);
+    };
+
+    // navigation tabs configuration - includes documents and messages tabs
+    const navigationTabs: { id: AdminView; label: string; icon: any; badge?: number }[] = [
+        { id: "dashboard", label: "Overview", icon: BarChart3 },
+        { id: "users", label: "Clients", icon: Users },
+        { id: "consultants", label: "Consultants", icon: Briefcase },
+        { id: "projects", label: "Projects", icon: FolderOpen },
+        { id: "timelogs", label: "Time Logs", icon: Clock, badge: stats.pendingLogs || undefined },
+        { id: "documents", label: "Documents", icon: FileText, badge: pendingDocRequests || undefined },
+        { id: "messages", label: "Messages", icon: MessageCircle, badge: unreadMessages || undefined },
+        { id: "emails", label: "Emails", icon: Mail },
+        { id: "alerts", label: "Alerts", icon: AlertTriangle, badge: alerts.length || undefined },
+    ];
+
+    // dashboard overview
+    const renderDashboard = () => (
+        <div className="space-y-6">
+            <div className="flex flex-wrap gap-2">
+                <button onClick={() => setShowAnnouncementModal(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">
+                    <Megaphone className="w-4 h-4" /> Send Announcement
+                </button>
+                <button onClick={() => onNavigate?.("EmailGenerator")} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
+                    <Plus className="w-4 h-4" /> Add Client
+                </button>
+                <button onClick={() => onNavigate?.("projects")} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium">
+                    <FolderOpen className="w-4 h-4" /> View Projects
+                </button>
+                <button onClick={() => onNavigate?.("hours")} className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium">
+                    <Clock className="w-4 h-4" /> Log Hours
+                </button>
+                <button onClick={() => setCurrentView("documents")} className="flex items-center gap-2 px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium">
+                    <FileText className="w-4 h-4" /> Request Documents
+                </button>
+                <button onClick={() => setCurrentView("messages")} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium">
+                    <MessageCircle className="w-4 h-4" /> Messages {unreadMessages > 0 && <span className="px-1.5 py-0.5 bg-white/20 rounded-full text-xs">{unreadMessages}</span>}
+                </button>
             </div>
 
-            {userActionMessage && (
-              <div className="mb-3 rounded-lg border border-emerald-400 bg-emerald-900/40 px-3 py-2 text-xs text-emerald-200">
-                {userActionMessage}
-              </div>
-            )}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <div className={`${styles.card} border rounded-xl p-4`}>
+                    <p className={`${styles.textMuted} text-xs`}>Total Clients</p>
+                    <p className={`text-2xl font-bold ${styles.text}`}>{users.length}</p>
+                </div>
+                <div className={`${styles.card} border rounded-xl p-4`}>
+                    <p className={`${styles.textMuted} text-xs`}>Active</p>
+                    <p className="text-2xl font-bold text-emerald-500">{stats.activeUsers}</p>
+                </div>
+                <div className={`${styles.card} border rounded-xl p-4`}>
+                    <p className={`${styles.textMuted} text-xs`}>Suspended</p>
+                    <p className="text-2xl font-bold text-red-500">{stats.suspendedUsers}</p>
+                </div>
+                <div className={`${styles.card} border rounded-xl p-4`}>
+                    <p className={`${styles.textMuted} text-xs`}>Consultants</p>
+                    <p className="text-2xl font-bold text-purple-500">{consultants.length}</p>
+                </div>
+                <div className={`${styles.card} border rounded-xl p-4`}>
+                    <p className={`${styles.textMuted} text-xs`}>Projects</p>
+                    <p className="text-2xl font-bold text-blue-500">{projects.length}</p>
+                </div>
+                <div className={`${styles.card} border rounded-xl p-4`}>
+                    <p className={`${styles.textMuted} text-xs`}>Total Hours</p>
+                    <p className="text-2xl font-bold text-amber-500">{stats.totalHours.toFixed(1)}</p>
+                </div>
+            </div>
 
-            {userLoading && (
-              <p className="text-slate-300 text-sm">Loading clients...</p>
-            )}
-            {userError && (
-              <p className="text-red-400 text-sm">{userError}</p>
-            )}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className={`${styles.card} border rounded-xl p-5`}>
+                    <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${styles.text}`}>
+                        <PieChart className="w-4 h-4" /> User Status
+                    </h3>
+                    <div className="flex items-center justify-center">
+                        <div className="relative w-32 h-32">
+                            <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                                {users.length > 0 ? (
+                                    <>
+                                        <circle cx="18" cy="18" r="15.9" fill="transparent" stroke="#10b981" strokeWidth="3" strokeDasharray={`${(stats.activeUsers / users.length) * 100} 100`} />
+                                        <circle cx="18" cy="18" r="15.9" fill="transparent" stroke="#6b7280" strokeWidth="3" strokeDasharray={`${(stats.inactiveUsers / users.length) * 100} 100`} strokeDashoffset={`-${(stats.activeUsers / users.length) * 100}`} />
+                                        <circle cx="18" cy="18" r="15.9" fill="transparent" stroke="#ef4444" strokeWidth="3" strokeDasharray={`${(stats.suspendedUsers / users.length) * 100} 100`} strokeDashoffset={`-${((stats.activeUsers + stats.inactiveUsers) / users.length) * 100}`} />
+                                    </>
+                                ) : (
+                                    <circle cx="18" cy="18" r="15.9" fill="transparent" stroke={isDark ? "#374151" : "#e5e7eb"} strokeWidth="3" />
+                                )}
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <span className={`text-lg font-bold ${styles.text}`}>{users.length}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex justify-center gap-4 mt-4 text-xs">
+                        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-emerald-500" /><span className={styles.textMuted}>Active</span></div>
+                        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-gray-500" /><span className={styles.textMuted}>Inactive</span></div>
+                        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500" /><span className={styles.textMuted}>Suspended</span></div>
+                    </div>
+                </div>
 
-            {!userLoading && !userError && users.length === 0 && (
-              <p className="text-slate-300 text-sm">
-                No clients found. Use &quot;Add Client&quot; to create one.
-              </p>
-            )}
+                <div className={`${styles.card} border rounded-xl p-5`}>
+                    <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${styles.text}`}>
+                        <BarChart3 className="w-4 h-4" /> Time Log Status
+                    </h3>
+                    <div className="space-y-3">
+                        <div>
+                            <div className={`flex justify-between text-xs mb-1 ${styles.textMuted}`}>
+                                <span>Pending</span>
+                                <span className="text-amber-500">{stats.pendingLogs}</span>
+                            </div>
+                            <div className={`h-3 ${isDark ? "bg-slate-700" : "bg-gray-200"} rounded-full overflow-hidden`}>
+                                <div className="h-full bg-amber-500 rounded-full" style={{ width: `${hoursLogs.length ? (stats.pendingLogs / hoursLogs.length) * 100 : 0}%` }} />
+                            </div>
+                        </div>
+                        <div>
+                            <div className={`flex justify-between text-xs mb-1 ${styles.textMuted}`}>
+                                <span>Approved</span>
+                                <span className="text-emerald-500">{stats.approvedLogs}</span>
+                            </div>
+                            <div className={`h-3 ${isDark ? "bg-slate-700" : "bg-gray-200"} rounded-full overflow-hidden`}>
+                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${hoursLogs.length ? (stats.approvedLogs / hoursLogs.length) * 100 : 0}%` }} />
+                            </div>
+                        </div>
+                        <div>
+                            <div className={`flex justify-between text-xs mb-1 ${styles.textMuted}`}>
+                                <span>Denied</span>
+                                <span className="text-red-500">{stats.deniedLogs}</span>
+                            </div>
+                            <div className={`h-3 ${isDark ? "bg-slate-700" : "bg-gray-200"} rounded-full overflow-hidden`}>
+                                <div className="h-full bg-red-500 rounded-full" style={{ width: `${hoursLogs.length ? (stats.deniedLogs / hoursLogs.length) * 100 : 0}%` }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-            {!userLoading && !userError && users.length > 0 && (
-              <div className="overflow-x-auto mt-2">
-                <table className="min-w-full text-sm text-left text-slate-100">
-                  <thead>
-                    <tr className="bg-gray-800">
-                      <th className="px-3 py-2 border-b border-gray-700">
-                        ID
-                      </th>
-                      <th className="px-3 py-2 border-b border-gray-700">
-                        Name
-                      </th>
-                      <th className="px-3 py-2 border-b border-gray-700">
-                        Email
-                      </th>
-                      <th className="px-3 py-2 border-b border-gray-700">
-                        Temp Password
-                      </th>
-                      <th className="px-3 py-2 border-b border-gray-700">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {users.map((u) => (
-                      <tr key={u.customerId} className="hover:bg-gray-800">
-                        <td className="px-3 py-2 border-b border-gray-800">
-                          {u.clientCode}
-                        </td>
-                        <td className="px-3 py-2 border-b border-gray-800">
-                          {`${u.firstName} ${
-                            u.middleName ? u.middleName + " " : ""
-                          }${u.lastName}`}
-                        </td>
-                        <td className="px-3 py-2 border-b border-gray-800">
-                          {u.email}
-                        </td>
-                        <td className="px-3 py-2 border-b border-gray-800 font-mono">
-                          {u.tempPassword}
-                        </td>
-                        <td className="px-3 py-2 border-b border-gray-800">
-                          <button
-                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 mr-2"
-                            onClick={() => handleDeleteUser(u.customerId)}
-                          >
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                <div className={`${styles.card} border rounded-xl p-5`}>
+                    <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${styles.text}`}>
+                        <Clock className="w-4 h-4" /> Hours by Consultant
+                    </h3>
+                    <div className="space-y-2 max-h-44 overflow-y-auto">
+                        {consultants.length === 0 ? (
+                            <p className={`${styles.textMuted} text-sm text-center py-4`}>No consultants</p>
+                        ) : (
+                            consultants.slice(0, 6).map(c => {
+                                const hours = getConsultantHours(c.consultantId);
+                                const maxHours = Math.max(...consultants.map(con => getConsultantHours(con.consultantId)), 1);
+                                return (
+                                    <div key={c.consultantId}>
+                                        <div className={`flex justify-between text-xs mb-1 ${styles.textMuted}`}>
+                                            <span className="truncate">{c.firstName} {c.lastName}</span>
+                                            <span className="text-blue-500">{hours}h</span>
+                                        </div>
+                                        <div className={`h-2 ${isDark ? "bg-slate-700" : "bg-gray-200"} rounded-full overflow-hidden`}>
+                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(hours / maxHours) * 100}%` }} />
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {alerts.length > 0 && (
+                <div className={`${styles.card} border rounded-xl p-5`}>
+                    <h3 className={`text-sm font-semibold mb-3 flex items-center gap-2 ${styles.text}`}>
+                        <AlertTriangle className="w-4 h-4 text-amber-500" /> Recent Alerts
+                    </h3>
+                    <div className="space-y-2">
+                        {alerts.slice(0, 3).map(alert => (
+                            <div key={alert.id} className={`flex items-center gap-2 p-2 rounded-lg text-xs ${alert.type === "error" ? "bg-red-500/10" : alert.type === "warning" ? "bg-amber-500/10" : "bg-blue-500/10"}`}>
+                                <AlertTriangle className={`w-3 h-3 ${alert.type === "error" ? "text-red-500" : alert.type === "warning" ? "text-amber-500" : "text-blue-500"}`} />
+                                <span className={styles.text}>{alert.message}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
+    // users/clients management view
+    const renderUsers = () => (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className={`text-xl font-semibold ${styles.text}`}>Client Management</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => exportToCSV(users, "clients", showToast, (msg) => showToast(msg, "error"))} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <Download className="w-4 h-4" /> Export
+                    </button>
+                    <button onClick={fetchUsers} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <RefreshCw className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                    <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${styles.textMuted}`} />
+                    <input type="text" placeholder="Search clients..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`w-full pl-10 pr-4 py-2 ${styles.input} border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500`} />
+                </div>
+                <select value={userStatusFilter} onChange={e => setUserStatusFilter(e.target.value as any)} className={`${styles.input} border rounded-lg px-3 py-2 text-sm focus:outline-none`}>
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="suspended">Suspended</option>
+                </select>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className={`lg:col-span-2 ${styles.card} border rounded-xl overflow-hidden`}>
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className={styles.cardInner}>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Client</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Email</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Status</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className={`divide-y ${styles.divider}`}>
+                            {filteredUsers.length === 0 ? (
+                                <tr><td colSpan={4} className={`px-4 py-8 text-center ${styles.textMuted}`}>No clients found</td></tr>
+                            ) : (
+                                filteredUsers.map(user => (
+                                    <tr key={user.customerId} onClick={() => setSelectedUser(user)} className={`cursor-pointer ${styles.hover} ${selectedUser?.customerId === user.customerId ? styles.selected : ""}`}>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full ${isDark ? "bg-slate-700" : "bg-gray-200"} flex items-center justify-center text-sm font-medium`}>
+                                                    {user.firstName[0]}{user.lastName[0]}
+                                                </div>
+                                                <div>
+                                                    <p className={`font-medium ${styles.text}`}>{user.firstName} {user.lastName}</p>
+                                                    <p className={`${styles.textMuted} text-xs`}>{user.clientCode}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className={`px-4 py-3 ${styles.textMuted}`}>{user.email}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-1 rounded text-xs ${user.status === "active" ? "bg-emerald-500/20 text-emerald-500" : user.status === "suspended" ? "bg-red-500/20 text-red-500" : "bg-gray-500/20 text-gray-500"}`}>
+                                                {user.status}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center gap-1">
+                                                <button onClick={e => { e.stopPropagation(); setSelectedUser(user); setShowResetPasswordModal(true); }} className={`p-2 rounded-lg ${styles.hover}`}>
+                                                    <Key className={`w-4 h-4 ${styles.textMuted}`} />
+                                                </button>
+                                                <button onClick={e => { e.stopPropagation(); handleToggleUserSuspension(user); }} className={`p-2 rounded-lg ${styles.hover}`}>
+                                                    <Ban className={`w-4 h-4 ${user.status === "suspended" ? "text-red-500" : styles.textMuted}`} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className={`${styles.card} border rounded-xl p-5`}>
+                    {selectedUser ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white">
+                                    {selectedUser.firstName[0]}{selectedUser.lastName[0]}
+                                </div>
+                                <div>
+                                    <h3 className={`text-lg font-semibold ${styles.text}`}>{selectedUser.firstName} {selectedUser.lastName}</h3>
+                                    <p className={styles.textMuted}>{selectedUser.clientCode}</p>
+                                </div>
+                            </div>
+                            <div className={`space-y-3 pt-3 border-t ${styles.border}`}>
+                                <div className="flex items-center gap-3"><Mail className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm ${styles.text}`}>{selectedUser.email}</span></div>
+                                <div className="flex items-center gap-3"><Shield className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm capitalize ${styles.text}`}>{selectedUser.role}</span></div>
+                                <div className="flex items-center gap-3"><UserCheck className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm capitalize ${selectedUser.status === "active" ? "text-emerald-500" : selectedUser.status === "suspended" ? "text-red-500" : styles.textMuted}`}>{selectedUser.status}</span></div>
+                                <div className="flex items-center gap-3"><Key className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm font-mono ${styles.text}`}>{selectedUser.tempPassword}</span></div>
+                            </div>
+                            <div className={`flex gap-2 pt-3 border-t ${styles.border}`}>
+                                <button onClick={() => { setNewRole(selectedUser.role || "client"); setShowChangeRoleModal(true); }} className={`flex-1 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                                    Change Role
+                                </button>
+                                <button onClick={() => setShowResetPasswordModal(true)} className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">
+                                    Reset Password
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className={`flex flex-col items-center justify-center h-64 ${styles.textMuted}`}>
+                            <Users className="w-12 h-12 mb-2 opacity-50" />
+                            <p className="text-sm">Select a client to view details</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    // consultants management view
+    const renderConsultants = () => (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className={`text-xl font-semibold ${styles.text}`}>Consultant Management</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => exportToCSV(consultants, "consultants", showToast, (msg) => showToast(msg, "error"))} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <Download className="w-4 h-4" /> Export
+                    </button>
+                    <button onClick={fetchConsultants} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <RefreshCw className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className={`lg:col-span-2 ${styles.card} border rounded-xl overflow-hidden`}>
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className={styles.cardInner}>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Consultant</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Role</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Hours</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Status</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className={`divide-y ${styles.divider}`}>
+                            {consultants.length === 0 ? (
+                                <tr><td colSpan={5} className={`px-4 py-8 text-center ${styles.textMuted}`}>No consultants</td></tr>
+                            ) : (
+                                consultants.map(consultant => (
+                                    <tr key={consultant.consultantId} onClick={() => setSelectedConsultant(consultant)} className={`cursor-pointer ${styles.hover} ${selectedConsultant?.consultantId === consultant.consultantId ? styles.selected : ""}`}>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-sm font-medium text-purple-500">
+                                                    {consultant.firstName[0]}{consultant.lastName[0]}
+                                                </div>
+                                                <div>
+                                                    <p className={`font-medium ${styles.text}`}>{consultant.firstName} {consultant.lastName}</p>
+                                                    <p className={`${styles.textMuted} text-xs`}>{consultant.consultantCode}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className="px-2 py-1 bg-purple-500/20 text-purple-500 rounded text-xs">{consultant.role || "Consultant"}</span>
+                                        </td>
+                                        <td className={`px-4 py-3 ${styles.textMuted}`}>{getConsultantHours(consultant.consultantId)}h</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-1 rounded text-xs ${consultant.status === "active" ? "bg-emerald-500/20 text-emerald-500" : "bg-red-500/20 text-red-500"}`}>
+                                                {consultant.status || "active"}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <button onClick={e => { e.stopPropagation(); handleToggleConsultantSuspension(consultant); }} className={`p-2 rounded-lg ${styles.hover}`}>
+                                                <Ban className={`w-4 h-4 ${consultant.status === "suspended" ? "text-red-500" : styles.textMuted}`} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className={`${styles.card} border rounded-xl p-5`}>
+                    {selectedConsultant ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-2xl font-bold text-white">
+                                    {selectedConsultant.firstName[0]}{selectedConsultant.lastName[0]}
+                                </div>
+                                <div>
+                                    <h3 className={`text-lg font-semibold ${styles.text}`}>{selectedConsultant.firstName} {selectedConsultant.lastName}</h3>
+                                    <p className={styles.textMuted}>{selectedConsultant.consultantCode}</p>
+                                </div>
+                            </div>
+                            <div className={`space-y-3 pt-3 border-t ${styles.border}`}>
+                                <div className="flex items-center gap-3"><Mail className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm ${styles.text}`}>{selectedConsultant.email}</span></div>
+                                <div className="flex items-center gap-3"><Briefcase className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm ${styles.text}`}>{selectedConsultant.role || "Consultant"}</span></div>
+                                <div className="flex items-center gap-3"><Clock className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm ${styles.text}`}>{getConsultantHours(selectedConsultant.consultantId)}h logged</span></div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className={`flex flex-col items-center justify-center h-64 ${styles.textMuted}`}>
+                            <Briefcase className="w-12 h-12 mb-2 opacity-50" />
+                            <p className="text-sm">Select a consultant</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    // projects management view
+    const renderProjects = () => (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className={`text-xl font-semibold ${styles.text}`}>Project Management</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => exportToCSV(projects, "projects", showToast, (msg) => showToast(msg, "error"))} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <Download className="w-4 h-4" /> Export
+                    </button>
+                    <button onClick={fetchProjects} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <RefreshCw className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className={`lg:col-span-2 ${styles.card} border rounded-xl overflow-hidden`}>
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className={styles.cardInner}>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Project</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Client</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Status</th>
+                                <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody className={`divide-y ${styles.divider}`}>
+                            {projects.length === 0 ? (
+                                <tr><td colSpan={4} className={`px-4 py-8 text-center ${styles.textMuted}`}>No projects</td></tr>
+                            ) : (
+                                projects.map(project => (
+                                    <tr key={project.projectId} onClick={() => setSelectedProject(project)} className={`cursor-pointer ${styles.hover} ${selectedProject?.projectId === project.projectId ? styles.selected : ""}`}>
+                                        <td className="px-4 py-3">
+                                            <p className={`font-medium ${styles.text}`}>{project.projectName}</p>
+                                            <p className={`${styles.textMuted} text-xs`}>{project.projectCode}</p>
+                                        </td>
+                                        <td className={`px-4 py-3 ${styles.textMuted}`}>{project.clientName || "-"}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-1 rounded text-xs ${(project.status || "").toLowerCase() === "complete" ? "bg-emerald-500/20 text-emerald-500" : (project.status || "").toLowerCase() === "in progress" ? "bg-blue-500/20 text-blue-500" : "bg-gray-500/20 text-gray-500"}`}>
+                                                {project.status || "Pending"}
+                                            </span>
+                                        </td>
+                                        <td className={`px-4 py-3 ${styles.textMuted}`}>{getProjectHours(project.projectId)}h</td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className={`${styles.card} border rounded-xl p-5`}>
+                    {selectedProject ? (
+                        <div className="space-y-4">
+                            <div>
+                                <h3 className={`text-lg font-semibold ${styles.text}`}>{selectedProject.projectName}</h3>
+                                <p className={styles.textMuted}>{selectedProject.projectCode}</p>
+                            </div>
+                            <div className={`space-y-3 pt-3 border-t ${styles.border}`}>
+                                <div className="flex items-center gap-3"><Users className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm ${styles.text}`}>Client: {selectedProject.clientName || "Unassigned"}</span></div>
+                                <div className="flex items-center gap-3"><FolderOpen className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm ${styles.text}`}>Status: {selectedProject.status || "Pending"}</span></div>
+                                <div className="flex items-center gap-3"><Clock className={`w-4 h-4 ${styles.textMuted}`} /><span className={`text-sm ${styles.text}`}>{getProjectHours(selectedProject.projectId)}h logged</span></div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className={`flex flex-col items-center justify-center h-64 ${styles.textMuted}`}>
+                            <FolderOpen className="w-12 h-12 mb-2 opacity-50" />
+                            <p className="text-sm">Select a project</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    // time logs approval view
+    const renderTimeLogs = () => (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className={`text-xl font-semibold ${styles.text}`}>Time Log Approvals</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => exportToCSV(hoursLogs.map(l => ({ ...l, consultant: getConsultantName(l.consultantId), project: getProjectName(l.projectId) })), "timelogs", showToast, (msg) => showToast(msg, "error"))} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <Download className="w-4 h-4" /> Export
+                    </button>
+                    <button onClick={fetchHoursLogs} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <RefreshCw className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+
+            <select value={timelogStatusFilter} onChange={e => setTimelogStatusFilter(e.target.value as any)} className={`${styles.input} border rounded-lg px-3 py-2 text-sm focus:outline-none`}>
+                <option value="all">All ({hoursLogs.length})</option>
+                <option value="pending">Pending ({stats.pendingLogs})</option>
+                <option value="approved">Approved ({stats.approvedLogs})</option>
+                <option value="denied">Denied ({stats.deniedLogs})</option>
+            </select>
+
+            <div className={`${styles.card} border rounded-xl overflow-hidden`}>
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr className={styles.cardInner}>
+                            <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Date</th>
+                            <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Consultant</th>
+                            <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Project</th>
+                            <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Hours</th>
+                            <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Status</th>
+                            <th className={`text-left px-4 py-3 font-medium ${styles.textMuted}`}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className={`divide-y ${styles.divider}`}>
+                        {filteredTimeLogs.length === 0 ? (
+                            <tr><td colSpan={6} className={`px-4 py-8 text-center ${styles.textMuted}`}>No time logs</td></tr>
+                        ) : (
+                            filteredTimeLogs.map(log => (
+                                <tr key={log.logId} className={styles.hover}>
+                                    <td className={`px-4 py-3 ${styles.textMuted}`}>{log.date}</td>
+                                    <td className={`px-4 py-3 ${styles.text}`}>{getConsultantName(log.consultantId)}</td>
+                                    <td className={`px-4 py-3 ${styles.text}`}>{getProjectName(log.projectId)}</td>
+                                    <td className={`px-4 py-3 font-medium ${styles.text}`}>{log.hours}h</td>
+                                    <td className="px-4 py-3">
+                                        <span className={`px-2 py-1 rounded text-xs ${log.approvalStatus === "approved" ? "bg-emerald-500/20 text-emerald-500" : log.approvalStatus === "denied" ? "bg-red-500/20 text-red-500" : "bg-amber-500/20 text-amber-500"}`}>
+                                            {log.approvalStatus || "pending"}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <div className="flex items-center gap-1">
+                                            <button onClick={() => handleApproveTimeLog(log.logId)} className={`p-2 rounded-lg ${log.approvalStatus === "approved" ? "bg-emerald-500/20" : styles.hover}`}>
+                                                <CheckCircle className={`w-4 h-4 ${log.approvalStatus === "approved" ? "text-emerald-500" : styles.textMuted}`} />
+                                            </button>
+                                            <button onClick={() => handleDenyTimeLog(log.logId)} className={`p-2 rounded-lg ${log.approvalStatus === "denied" ? "bg-red-500/20" : styles.hover}`}>
+                                                <XCircle className={`w-4 h-4 ${log.approvalStatus === "denied" ? "text-red-500" : styles.textMuted}`} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
                 </table>
-              </div>
+            </div>
+        </div>
+    );
+
+    // emails view
+    const renderEmails = () => (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className={`text-xl font-semibold ${styles.text}`}>Email System</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => exportToCSV(emails, "emails", showToast, (msg) => showToast(msg, "error"))} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <Download className="w-4 h-4" /> Export
+                    </button>
+                    <button onClick={() => setShowComposeEmailModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
+                        <Send className="w-4 h-4" /> Compose
+                    </button>
+                    <button onClick={fetchEmails} className={`flex items-center gap-2 px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>
+                        <RefreshCw className="w-4 h-4" />
+                    </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className={`lg:col-span-1 ${styles.card} border rounded-xl overflow-hidden`}>
+                    <div className={`p-3 border-b ${styles.border}`}>
+                        <p className={`text-sm font-medium ${styles.text}`}>Sent ({emails.length})</p>
+                    </div>
+                    <div className={`divide-y ${styles.divider} max-h-[500px] overflow-y-auto`}>
+                        {emails.length === 0 ? (
+                            <div className={`p-4 text-center ${styles.textMuted} text-sm`}>No emails yet</div>
+                        ) : (
+                            emails.map(email => (
+                                <div key={email.emailId} onClick={() => setSelectedEmail(email)} className={`p-3 cursor-pointer ${styles.hover} ${selectedEmail?.emailId === email.emailId ? styles.selected : ""}`}>
+                                    <p className={`text-sm font-medium truncate ${styles.text}`}>{email.to}</p>
+                                    <p className={`text-sm truncate ${styles.textMuted}`}>{email.subject}</p>
+                                    <p className={`text-xs ${styles.textMuted} mt-1`}>{formatDate(email.createdAt)}</p>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                <div className={`lg:col-span-2 ${styles.card} border rounded-xl`}>
+                    {selectedEmail ? (
+                        <div className="p-5">
+                            <div className={`mb-4 pb-4 border-b ${styles.border}`}>
+                                <h3 className={`text-lg font-semibold mb-2 ${styles.text}`}>{selectedEmail.subject}</h3>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div><span className={styles.textMuted}>To:</span><span className={`ml-2 ${styles.text}`}>{selectedEmail.to}</span></div>
+                                    <div><span className={styles.textMuted}>From:</span><span className={`ml-2 ${styles.text}`}>{selectedEmail.from}</span></div>
+                                    <div><span className={styles.textMuted}>Date:</span><span className={`ml-2 ${styles.text}`}>{formatDate(selectedEmail.createdAt)}</span></div>
+                                    <div><span className={styles.textMuted}>Status:</span><span className="text-emerald-500 ml-2">{selectedEmail.status}</span></div>
+                                </div>
+                            </div>
+                            <div className={`${styles.cardInner} rounded-lg p-4`}>
+                                <pre className={`text-sm whitespace-pre-wrap font-sans ${styles.text}`}>{selectedEmail.body}</pre>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className={`flex flex-col items-center justify-center h-64 ${styles.textMuted}`}>
+                            <Mail className="w-12 h-12 mb-2 opacity-50" />
+                            <p className="text-sm">Select an email to view</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    // alerts management view
+    const renderAlerts = () => (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+                <h2 className={`text-xl font-semibold ${styles.text}`}>Alerts Management</h2>
+                <button onClick={() => { setEditingAlert(null); setNewAlertMessage(""); setNewAlertType("info"); setNewAlertExpiry(""); setShowAlertModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
+                    <Plus className="w-4 h-4" /> Create Alert
+                </button>
+            </div>
+
+            {alerts.length === 0 ? (
+                <div className={`${styles.card} border rounded-xl p-8 text-center`}>
+                    <Check className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
+                    <p className={styles.text}>No alerts</p>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {alerts.map(alert => (
+                        <div key={alert.id} className={`flex items-start gap-4 p-4 rounded-xl border ${alert.type === "error" ? "bg-red-500/10 border-red-500/30" : alert.type === "warning" ? "bg-amber-500/10 border-amber-500/30" : "bg-blue-500/10 border-blue-500/30"}`}>
+                            <AlertTriangle className={`w-5 h-5 mt-0.5 ${alert.type === "error" ? "text-red-500" : alert.type === "warning" ? "text-amber-500" : "text-blue-500"}`} />
+                            <div className="flex-1">
+                                <p className={styles.text}>{alert.message}</p>
+                                <div className={`flex items-center gap-4 mt-1 ${styles.textMuted}`}>
+                                    <p className="text-xs">{formatDate(alert.timestamp)}</p>
+                                    {alert.expiresAt && <p className="text-xs flex items-center gap-1"><Timer className="w-3 h-3" /> Expires: {formatDate(alert.expiresAt)}</p>}
+                                    {alert.isCustom && <span className={`text-xs px-1.5 py-0.5 rounded ${isDark ? "bg-slate-700" : "bg-gray-200"}`}>Custom</span>}
+                                </div>
+                            </div>
+                            {alert.isCustom && (
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => { setEditingAlert(alert); setNewAlertMessage(alert.message); setNewAlertType(alert.type); setNewAlertExpiry(alert.expiresAt || ""); setShowAlertModal(true); }} className={`p-2 rounded-lg ${styles.hover}`}>
+                                        <Edit2 className={`w-4 h-4 ${styles.textMuted}`} />
+                                    </button>
+                                    <button onClick={() => handleDeleteAlert(alert.id)} className={`p-2 rounded-lg ${styles.hover}`}>
+                                        <Trash2 className="w-4 h-4 text-red-500" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
             )}
-          </div>
-
-          {/* Assignment: Client ↔ Consultant */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <form
-              onSubmit={handleAssignConsultant}
-              className="bg-gray-800 rounded-xl p-4 space-y-3"
-            >
-              <h3 className="text-sm font-semibold">
-                Assign Consultant to Client
-              </h3>
-              <div className="flex flex-col gap-2">
-                <select
-                  className="bg-gray-900 rounded px-3 py-2 text-sm text-white border border-gray-700"
-                  value={assignClientIdForConsultant}
-                  onChange={(e) =>
-                    setAssignClientIdForConsultant(e.target.value)
-                  }
-                >
-                  <option value="">Select client...</option>
-                  {users.map((u) => (
-                    <option key={u.customerId} value={u.customerId}>
-                      {u.clientCode} – {u.firstName} {u.lastName}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="bg-gray-900 rounded px-3 py-2 text-sm text-white border border-gray-700"
-                  value={assignConsultantId}
-                  onChange={(e) => setAssignConsultantId(e.target.value)}
-                >
-                  <option value="">Select consultant...</option>
-                  {consultants.map((c) => (
-                    <option key={c.consultantId} value={c.consultantId}>
-                      {c.consultantCode} – {c.firstName} {c.lastName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="mt-1 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-sm font-semibold"
-              >
-                Assign Consultant
-              </button>
-            </form>
-
-            {/* Assignment: Project → Client (+ optional consultant) */}
-            <form
-              onSubmit={handleAssignProject}
-              className="bg-gray-800 rounded-xl p-4 space-y-3"
-            >
-              <h3 className="text-sm font-semibold">
-                Assign Project to Client
-              </h3>
-              <div className="flex flex-col gap-2">
-                <select
-                  className="bg-gray-900 rounded px-3 py-2 text-sm text-white border border-gray-700"
-                  value={assignClientIdForProject}
-                  onChange={(e) =>
-                    setAssignClientIdForProject(e.target.value)
-                  }
-                >
-                  <option value="">Select client...</option>
-                  {users.map((u) => (
-                    <option key={u.customerId} value={u.customerId}>
-                      {u.clientCode} – {u.firstName} {u.lastName}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="bg-gray-900 rounded px-3 py-2 text-sm text-white border border-gray-700"
-                  value={assignProjectId}
-                  onChange={(e) => setAssignProjectId(e.target.value)}
-                >
-                  <option value="">Select project...</option>
-                  {projects.map((p) => (
-                    <option key={p.projectId} value={p.projectId}>
-                      {p.projectCode} – {p.projectName}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="bg-gray-900 rounded px-3 py-2 text-sm text-white border border-gray-700"
-                  value={assignProjectConsultantId}
-                  onChange={(e) =>
-                    setAssignProjectConsultantId(e.target.value)
-                  }
-                >
-                  <option value="">(Optional) Assign consultant...</option>
-                  {consultants.map((c) => (
-                    <option key={c.consultantId} value={c.consultantId}>
-                      {c.consultantCode} – {c.firstName} {c.lastName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="mt-1 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-sm font-semibold"
-              >
-                Assign Project
-              </button>
-            </form>
-          </div>
         </div>
-      )}
-    </div>
-  );
+    );
 
-  const renderProjects = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-          <p className="text-sm text-slate-300">
-            Create new projects and manage existing ones.
-          </p>
-        </div>
-        <button
-          onClick={fetchProjects}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          Refresh
-        </button>
-      </div>
+    return (
+        <div className="space-y-6">
+            {toast && (
+                <div className={`fixed top-20 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 ${toast.type === "success" ? "bg-emerald-600" : "bg-red-600"} text-white`}>
+                    {toast.type === "success" ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    <span className="text-sm">{toast.message}</span>
+                </div>
+            )}
 
-      <form
-        onSubmit={handleCreateProject}
-        className="bg-gray-800 rounded-xl p-4 space-y-3 max-w-xl"
-      >
-        <h2 className="text-lg font-semibold mb-1">Add Project</h2>
-        <div className="flex flex-col gap-2">
-          <input
-            className="bg-gray-900 rounded px-3 py-2 text-sm text-white outline-none border border-gray-700"
-            placeholder="Project name (required)"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-          />
-          <input
-            className="bg-gray-900 rounded px-3 py-2 text-sm text-white outline-none border border-gray-700"
-            placeholder="Client name (optional)"
-            value={projectClientName}
-            onChange={(e) => setProjectClientName(e.target.value)}
-          />
-          <input
-            className="bg-gray-900 rounded px-3 py-2 text-sm text-white outline-none border border-gray-700"
-            placeholder="Status (e.g., Planned, In Progress, Complete)"
-            value={projectStatus}
-            onChange={(e) => setProjectStatus(e.target.value)}
-          />
-        </div>
-        <button
-          type="submit"
-          className="mt-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-sm font-semibold"
-        >
-          Save Project
-        </button>
-        {projectsError && (
-          <p className="text-xs text-red-400 mt-2">{projectsError}</p>
-        )}
-      </form>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <h1 className={`text-2xl font-bold ${styles.text}`}>Admin Dashboard</h1>
+                    <p className={styles.textMuted}>{adminEmail}</p>
+                </div>
+                <button onClick={refreshAllData} disabled={isLoading} className={`flex items-center gap-2 px-4 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover} disabled:opacity-50`}>
+                    <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh All
+                </button>
+            </div>
 
-      <div>
-        <h2 className="text-lg font-semibold mb-2">Existing Projects</h2>
-        {projectsLoading && (
-          <p className="text-slate-300 text-sm">Loading projects...</p>
-        )}
-        {!projectsLoading && projects.length === 0 && (
-          <p className="text-slate-300 text-sm">
-            No projects found. Use the form above to create one.
-          </p>
-        )}
-        {!projectsLoading && projects.length > 0 && (
-          <div className="overflow-x-auto mt-2">
-            <table className="min-w-full text-sm text-left text-slate-100">
-              <thead>
-                <tr className="bg-gray-800">
-                  <th className="px-3 py-2 border-b border-gray-700">ID</th>
-                  <th className="px-3 py-2 border-b border-gray-700">
-                    Project
-                  </th>
-                  <th className="px-3 py-2 border-b border-gray-700">
-                    Client
-                  </th>
-                  <th className="px-3 py-2 border-b border-gray-700">
-                    Status
-                  </th>
-                  <th className="px-3 py-2 border-b border-gray-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((p) => (
-                  <tr key={p.projectId} className="hover:bg-gray-800">
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {p.projectCode}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {p.projectName}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {p.clientName}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {p.status}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      <button
-                        className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700"
-                        onClick={() => handleDeleteProject(p.projectId)}
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
+            <div className="flex gap-1 overflow-x-auto pb-2">
+                {navigationTabs.map(tab => (
+                    <button key={tab.id} onClick={() => setCurrentView(tab.id)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${currentView === tab.id ? "bg-blue-600 text-white" : `${styles.textMuted} ${styles.hover}`}`}>
+                        <tab.icon className="w-4 h-4" />
+                        {tab.label}
+                        {tab.badge ? <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">{tab.badge}</span> : null}
+                    </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+            </div>
 
-  const renderConsultants = () => (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-2xl font-semibold">Consultants</h1>
-          <p className="text-sm text-slate-300">
-            Add consultants and manage their details.
-          </p>
+            {currentView === "dashboard" && renderDashboard()}
+            {currentView === "users" && renderUsers()}
+            {currentView === "consultants" && renderConsultants()}
+            {currentView === "projects" && renderProjects()}
+            {currentView === "timelogs" && renderTimeLogs()}
+            {currentView === "documents" && <AdminDocumentRequests adminEmail={adminEmail} adminName={adminName} onNavigate={onNavigate} />}
+            {currentView === "messages" && <AdminMessages adminEmail={adminEmail} adminName={adminName} onNavigate={onNavigate} />}
+            {currentView === "emails" && renderEmails()}
+            {currentView === "alerts" && renderAlerts()}
+
+            {showResetPasswordModal && selectedUser && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className={`${styles.card} border rounded-xl p-6 w-full max-w-md`}>
+                        <h3 className={`text-lg font-semibold mb-4 ${styles.text}`}>Reset Password</h3>
+                        <p className={`text-sm ${styles.textMuted} mb-4`}>For {selectedUser.email}</p>
+                        <div className="flex gap-2 mb-4">
+                            <input type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="New password" className={`flex-1 px-3 py-2 ${styles.input} border rounded-lg text-sm`} />
+                            <button onClick={() => setNewPassword(generateRandomPassword())} className={`px-3 py-2 ${styles.card} border rounded-lg text-sm ${styles.hover}`}>Generate</button>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => { setShowResetPasswordModal(false); setSelectedUser(null); setNewPassword(""); }} className={`px-4 py-2 ${styles.textMuted} text-sm`}>Cancel</button>
+                            <button onClick={handleResetPassword} disabled={!newPassword} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm disabled:opacity-50">Reset</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showChangeRoleModal && selectedUser && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className={`${styles.card} border rounded-xl p-6 w-full max-w-md`}>
+                        <h3 className={`text-lg font-semibold mb-4 ${styles.text}`}>Change Role</h3>
+                        <select value={newRole} onChange={e => setNewRole(e.target.value)} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm mb-4`}>
+                            <option value="client">Client</option>
+                            <option value="consultant">Consultant</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => { setShowChangeRoleModal(false); setSelectedUser(null); }} className={`px-4 py-2 ${styles.textMuted} text-sm`}>Cancel</button>
+                            <button onClick={handleChangeRole} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">Save</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showComposeEmailModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className={`${styles.card} border rounded-xl p-6 w-full max-w-lg`}>
+                        <h3 className={`text-lg font-semibold mb-4 ${styles.text}`}>Compose Email</h3>
+                        <div className="space-y-3">
+                            <div className="relative">
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>To</label>
+                                <input type="text" value={composeTo} onChange={e => handleEmailInput(e.target.value)} onBlur={() => setTimeout(() => setShowEmailSuggestions(false), 200)} placeholder="Type name or email..." className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm`} />
+                                {showEmailSuggestions && emailSuggestions.length > 0 && (
+                                    <div className={`absolute z-10 w-full mt-1 ${styles.card} border rounded-lg overflow-hidden shadow-lg`}>
+                                        {emailSuggestions.map((suggestion, i) => (
+                                            <div key={i} onMouseDown={() => { setComposeTo(suggestion.email); setShowEmailSuggestions(false); }} className={`px-3 py-2 cursor-pointer ${styles.hover}`}>
+                                                <p className={`text-sm ${styles.text}`}>{suggestion.name}</p>
+                                                <p className={`text-xs ${styles.textMuted}`}>{suggestion.email}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Subject</label>
+                                <input type="text" value={composeSubject} onChange={e => setComposeSubject(e.target.value)} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm`} />
+                            </div>
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Body</label>
+                                <textarea value={composeBody} onChange={e => setComposeBody(e.target.value)} rows={6} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm resize-none`} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => { setShowComposeEmailModal(false); setComposeTo(""); setComposeSubject(""); setComposeBody(""); }} className={`px-4 py-2 ${styles.textMuted} text-sm`}>Cancel</button>
+                            <button onClick={handleSendEmail} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"><Send className="w-4 h-4" /> Send</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showAnnouncementModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className={`${styles.card} border rounded-xl p-6 w-full max-w-lg`}>
+                        <h3 className={`text-lg font-semibold mb-4 flex items-center gap-2 ${styles.text}`}><Megaphone className="w-5 h-5" /> Send Announcement</h3>
+                        <div className="space-y-3">
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Send To</label>
+                                <select value={announcementTarget} onChange={e => setAnnouncementTarget(e.target.value as any)} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm`}>
+                                    <option value="all">All ({users.length + consultants.length})</option>
+                                    <option value="clients">Clients ({users.length})</option>
+                                    <option value="consultants">Consultants ({consultants.length})</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Subject</label>
+                                <input type="text" value={announcementSubject} onChange={e => setAnnouncementSubject(e.target.value)} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm`} />
+                            </div>
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Message</label>
+                                <textarea value={announcementBody} onChange={e => setAnnouncementBody(e.target.value)} rows={6} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm resize-none`} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => { setShowAnnouncementModal(false); setAnnouncementSubject(""); setAnnouncementBody(""); }} className={`px-4 py-2 ${styles.textMuted} text-sm`}>Cancel</button>
+                            <button onClick={handleSendAnnouncement} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm"><Megaphone className="w-4 h-4" /> Send</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showAlertModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className={`${styles.card} border rounded-xl p-6 w-full max-w-md`}>
+                        <h3 className={`text-lg font-semibold mb-4 ${styles.text}`}>{editingAlert ? "Edit Alert" : "Create Alert"}</h3>
+                        <div className="space-y-3">
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Type</label>
+                                <select value={newAlertType} onChange={e => setNewAlertType(e.target.value as AlertType)} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm`}>
+                                    <option value="info">Info</option>
+                                    <option value="warning">Warning</option>
+                                    <option value="error">Error</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Message</label>
+                                <input type="text" value={newAlertMessage} onChange={e => setNewAlertMessage(e.target.value)} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm`} />
+                            </div>
+                            <div>
+                                <label className={`text-sm ${styles.textMuted} block mb-1`}>Expires (optional)</label>
+                                <input type="datetime-local" value={newAlertExpiry} onChange={e => setNewAlertExpiry(e.target.value)} className={`w-full px-3 py-2 ${styles.input} border rounded-lg text-sm`} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => { setShowAlertModal(false); setEditingAlert(null); setNewAlertMessage(""); setNewAlertExpiry(""); }} className={`px-4 py-2 ${styles.textMuted} text-sm`}>Cancel</button>
+                            <button onClick={editingAlert ? handleUpdateAlert : handleCreateAlert} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm">{editingAlert ? "Update" : "Create"}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
-        <button
-          onClick={fetchConsultants}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white"
-        >
-          Refresh
-        </button>
-      </div>
-
-      <form
-        onSubmit={handleCreateConsultant}
-        className="bg-gray-800 rounded-xl p-4 space-y-3 max-w-xl"
-      >
-        <h2 className="text-lg font-semibold mb-1">Add Consultant</h2>
-        <div className="flex flex-col gap-2">
-          <input
-            className="bg-gray-900 rounded px-3 py-2 text-sm text-white outline-none border border-gray-700"
-            placeholder="First name (required)"
-            value={consFirstName}
-            onChange={(e) => setConsFirstName(e.target.value)}
-          />
-          <input
-            className="bg-gray-900 rounded px-3 py-2 text-sm text-white outline-none border border-gray-700"
-            placeholder="Last name (required)"
-            value={consLastName}
-            onChange={(e) => setConsLastName(e.target.value)}
-          />
-          <input
-            className="bg-gray-900 rounded px-3 py-2 text-sm text-white outline-none border border-gray-700"
-            placeholder="Email (required)"
-            value={consEmail}
-            onChange={(e) => setConsEmail(e.target.value)}
-          />
-          <input
-            className="bg-gray-900 rounded px-3 py-2 text-sm text-white outline-none border border-gray-700"
-            placeholder="Role (e.g., PM, Developer, Analyst)"
-            value={consRole}
-            onChange={(e) => setConsRole(e.target.value)}
-          />
-        </div>
-        <button
-          type="submit"
-          className="mt-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-sm font-semibold"
-        >
-          Save Consultant
-        </button>
-        {consultantsError && (
-          <p className="text-xs text-red-400 mt-2">{consultantsError}</p>
-        )}
-      </form>
-
-      <div>
-        <h2 className="text-lg font-semibold mb-2">Existing Consultants</h2>
-        {consultantsLoading && (
-          <p className="text-slate-300 text-sm">Loading consultants...</p>
-        )}
-        {!consultantsLoading && consultants.length === 0 && (
-          <p className="text-slate-300 text-sm">
-            No consultants found. Use the form above to create one.
-          </p>
-        )}
-        {!consultantsLoading && consultants.length > 0 && (
-          <div className="overflow-x-auto mt-2">
-            <table className="min-w-full text-sm text-left text-slate-100">
-              <thead>
-                <tr className="bg-gray-800">
-                  <th className="px-3 py-2 border-b border-gray-700">ID</th>
-                  <th className="px-3 py-2 border-b border-gray-700">Name</th>
-                  <th className="px-3 py-2 border-b border-gray-700">
-                    Email
-                  </th>
-                  <th className="px-3 py-2 border-b border-gray-700">Role</th>
-                  <th className="px-3 py-2 border-b border-gray-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {consultants.map((c) => (
-                  <tr key={c.consultantId} className="hover:bg-gray-800">
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {c.consultantCode}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {c.firstName} {c.lastName}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {c.email}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      {c.role}
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-800">
-                      <button
-                        className="px-3 py-1 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700"
-                        onClick={() => handleDeleteConsultant(c.consultantId)}
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const renderSettings = () => (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold mb-2">Settings</h1>
-      <p className="text-sm text-slate-300">
-        Future sprint: global admin settings for Timely (roles, access control,
-        notification preferences, etc.).
-      </p>
-    </div>
-  );
-
-  // ---- Main render ----
-  return (
-    <div className="bg-gray-900 min-h-screen text-white flex">
-      {/* inner admin sidebar */}
-      <aside className="w-64 bg-gray-950 border-r border-gray-800 p-4">
-        <h2 className="text-lg font-semibold mb-4">Admin Panel</h2>
-        <nav className="space-y-1 text-sm">
-          <button
-            className={`w-full text-left px-3 py-2 rounded-lg ${
-              section === "home" ? "bg-blue-600" : "hover:bg-gray-800"
-            }`}
-            onClick={() => setSection("home")}
-          >
-            Home
-          </button>
-          <button
-            className={`w-full text-left px-3 py-2 rounded-lg ${
-              section === "projects" ? "bg-blue-600" : "hover:bg-gray-800"
-            }`}
-            onClick={() => setSection("projects")}
-          >
-            Projects
-          </button>
-          <button
-            className={`w-full text-left px-3 py-2 rounded-lg ${
-              section === "consultants" ? "bg-blue-600" : "hover:bg-gray-800"
-            }`}
-            onClick={() => setSection("consultants")}
-          >
-            Consultants
-          </button>
-          <button
-            className={`w-full text-left px-3 py-2 rounded-lg ${
-              section === "clients" ? "bg-blue-600" : "hover:bg-gray-800"
-            }`}
-            onClick={() => setSection("clients")}
-          >
-            Clients
-          </button>
-          <button
-            className={`w-full text-left px-3 py-2 rounded-lg ${
-              section === "settings" ? "bg-blue-600" : "hover:bg-gray-800"
-            }`}
-            onClick={() => setSection("settings")}
-          >
-            Settings
-          </button>
-        </nav>
-      </aside>
-
-      <main className="flex-1 p-6 overflow-y-auto">
-        {section === "home" && renderHome()}
-        {section === "clients" && renderClients()}
-        {section === "projects" && renderProjects()}
-        {section === "consultants" && renderConsultants()}
-        {section === "settings" && renderSettings()}
-      </main>
-    </div>
-  );
+    );
 };
 
 export default AdminTab;

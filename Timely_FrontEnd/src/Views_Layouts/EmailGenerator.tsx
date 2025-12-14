@@ -25,7 +25,6 @@ const EmailGenerator: React.FC = () => {
         accent: isDark ? 'text-blue-400' : 'text-blue-600',
     };
 
-    // Toast system
     const [toasts, setToasts] = useState<Toast[]>([]);
     const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
         const id = `toast_${Date.now()}`;
@@ -109,24 +108,34 @@ const EmailGenerator: React.FC = () => {
 
         setSaving(true);
         try {
-            const endpoint = accountType === "client" ? `${API_BASE}/api/users-csv` : `${API_BASE}/api/consultants-csv`;
-            const payload = accountType === "client"
-                ? { firstName: firstName.trim(), middleName: middleName.trim(), lastName: lastName.trim(), email: companyEmail, tempPassword, performedBy: 'admin' }
-                : { firstName: firstName.trim(), lastName: lastName.trim(), email: companyEmail, tempPassword, role: consultantRole.trim() || "Consultant", performedBy: 'admin' };
+            let performedBy = 'admin';
+            try { const stored = localStorage.getItem("timely_user"); if (stored) { const u = JSON.parse(stored); if (u?.email) performedBy = u.email; } } catch { }
 
-            const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-            if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Failed to save ${accountType}`); }
-
-            const data = await response.json();
-            const codeValue = accountType === "client" ? data.clientCode : data.consultantCode;
-            showToast(`Account created: ${codeValue}`, 'success');
+            if (accountType === "client") {
+                const response = await fetch(`${API_BASE}/api/users-csv`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ firstName: firstName.trim(), middleName: middleName.trim(), lastName: lastName.trim(), email: companyEmail, tempPassword, performedBy })
+                });
+                if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || "Failed to save client"); }
+                const data = await response.json();
+                showToast(`Client created: ${data.clientCode} - Welcome email sent!`, 'success');
+            } else {
+                const response = await fetch(`${API_BASE}/api/consultants`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ firstName: firstName.trim(), lastName: lastName.trim(), email: companyEmail, tempPassword, role: consultantRole.trim() || "Consultant", performedBy })
+                });
+                if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || "Failed to save consultant"); }
+                const data = await response.json();
+                showToast(`Consultant created: ${data.consultantCode} - Welcome email sent!`, 'success');
+            }
             clearForm();
         } catch (err: any) { showToast(err.message || `Error saving ${accountType}`, 'error'); } finally { setSaving(false); }
     };
 
     return (
         <div className={`min-h-screen ${styles.bg}`}>
-            {/* Toast Notifications */}
             <div className="fixed top-4 right-4 z-[10000] space-y-2">
                 {toasts.map(toast => (
                     <div key={toast.id} className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
@@ -137,16 +146,13 @@ const EmailGenerator: React.FC = () => {
             </div>
 
             <div className="max-w-2xl mx-auto px-6 py-8">
-                {/* Header */}
                 <div className="mb-8">
                     <h1 className={`text-4xl font-bold ${styles.text} mb-2`}>Create Account</h1>
                     <p className={styles.textMuted}>Register a new client or consultant account</p>
                 </div>
 
-                {/* Main Card */}
                 <div className={`${styles.card} border rounded-lg overflow-hidden`}>
                     <div className="p-6 space-y-6">
-                        {/* Account Type Toggle */}
                         <div>
                             <label className={`${styles.textMuted} text-sm block mb-2`}>Account Type</label>
                             <div className={`flex rounded-lg border ${styles.divider} overflow-hidden`}>
@@ -162,7 +168,6 @@ const EmailGenerator: React.FC = () => {
 
                         <div className={`border-t ${styles.divider}`} />
 
-                        {/* Personal Information */}
                         <div>
                             <h2 className={`${styles.text} font-semibold mb-4 flex items-center gap-2`}><User className={`w-5 h-5 ${styles.accent}`} />Personal Information</h2>
                             <div className="grid grid-cols-2 gap-4">
@@ -175,12 +180,11 @@ const EmailGenerator: React.FC = () => {
                             {accountType === "consultant" && (
                                 <div className="mt-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Role / Title</label><input type="text" placeholder="e.g. Senior Consultant" value={consultantRole} onChange={(e) => setConsultantRole(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /></div>
                             )}
-                            <div className="mt-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Personal Email</label><input type="email" placeholder="personal@example.com" value={personalEmail} onChange={(e) => setPersonalEmail(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /><p className={`${styles.textSubtle} text-xs mt-1`}>Used to send account invitation</p></div>
+                            <div className="mt-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Personal Email (optional)</label><input type="email" placeholder="personal@example.com" value={personalEmail} onChange={(e) => setPersonalEmail(e.target.value)} className={`w-full px-4 py-2.5 ${styles.input} border rounded-lg focus:outline-none ${styles.inputFocus}`} /><p className={`${styles.textSubtle} text-xs mt-1`}>Used for manual invite - welcome email goes to company email automatically</p></div>
                         </div>
 
                         <div className={`border-t ${styles.divider}`} />
 
-                        {/* Account Credentials */}
                         <div>
                             <h2 className={`${styles.text} font-semibold mb-4 flex items-center gap-2`}><Key className={`w-5 h-5 ${styles.accent}`} />Account Credentials</h2>
                             <div className="mb-4"><label className={`${styles.textMuted} text-sm block mb-1`}>Company Email</label><div className={`px-4 py-2.5 ${styles.cardInner} border ${styles.divider} rounded-lg ${styles.textMuted}`}>{companyEmail || "Enter first and last name"}</div></div>
@@ -196,9 +200,8 @@ const EmailGenerator: React.FC = () => {
 
                         <div className={`border-t ${styles.divider}`} />
 
-                        {/* Invitation */}
                         <div>
-                            <h2 className={`${styles.text} font-semibold mb-4 flex items-center gap-2`}><Link2 className={`w-5 h-5 ${styles.accent}`} />Invitation</h2>
+                            <h2 className={`${styles.text} font-semibold mb-4 flex items-center gap-2`}><Link2 className={`w-5 h-5 ${styles.accent}`} />Invitation (Optional)</h2>
                             <div>
                                 <label className={`${styles.textMuted} text-sm block mb-1`}>Invite Link</label>
                                 <div className="flex gap-2">
@@ -207,10 +210,14 @@ const EmailGenerator: React.FC = () => {
                                     <button onClick={() => copyToClipboard(inviteLink, "Invite link")} className={`px-4 py-2.5 ${styles.button} rounded-lg`}><Copy className="w-4 h-4" /></button>
                                 </div>
                             </div>
+                            <div className={`mt-4 p-3 rounded-lg ${isDark ? 'bg-blue-900/30 border-blue-800' : 'bg-blue-50 border-blue-200'} border`}>
+                                <p className={`text-xs ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>
+                                    <strong>Automatic Email:</strong> When you save the account, a welcome email with login credentials will be automatically sent to the company email address and saved to the Email Outbox.
+                                </p>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Footer Actions */}
                     <div className={`px-6 py-4 ${styles.cardInner} border-t ${styles.divider} flex flex-wrap items-center justify-between gap-3`}>
                         <div className="flex gap-2">
                             <button onClick={clearForm} className={`px-4 py-2.5 ${styles.button} rounded-lg flex items-center gap-2`}><Trash2 className="w-4 h-4" />Clear</button>
@@ -223,7 +230,9 @@ const EmailGenerator: React.FC = () => {
                     </div>
                 </div>
 
-                <p className={`${styles.textSubtle} text-xs mt-4 text-center`}>{accountType === "client" ? "Client accounts are stored in users.csv" : "Consultant accounts are stored in consultants.csv"}</p>
+                <p className={`${styles.textSubtle} text-xs mt-4 text-center`}>
+                    {accountType === "client" ? "Client accounts stored in users.csv - Welcome email sent automatically" : "Consultant accounts stored in consultants.csv - Welcome email sent automatically"}
+                </p>
             </div>
         </div>
     );
